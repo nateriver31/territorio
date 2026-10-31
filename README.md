@@ -8,10 +8,10 @@ Plugin para **Paper 26.2 / Java 25**. Reescrita da versão 0.1.2 fornecida, com 
 
 | Opção | O que baixar |
 | --- | --- |
-| [Plugin JAR](https://github.com/nateriver31/territorio/releases/download/v2.0.0/Territorio-2.0.0.jar) | Arquivo para colocar na pasta `plugins` do servidor |
-| [Projeto completo ZIP](https://github.com/nateriver31/territorio/releases/download/v2.0.0/Territorio-2.0.0-projeto.zip) | Código-fonte, JAR, configurações padrão, testes e manuais |
-| [Verificação SHA-256](https://github.com/nateriver31/territorio/releases/download/v2.0.0/SHA256SUMS.txt) | Checksums dos arquivos distribuídos |
-| [Resultados dos testes](https://github.com/nateriver31/territorio/releases/download/v2.0.0/VALIDACAO.txt) | Resumo dos 47 testes automatizados aprovados |
+| [Plugin JAR](https://raw.githubusercontent.com/nateriver31/territorio/v2.0.0/dist/Territorio-2.0.0.jar) | Arquivo para colocar na pasta `plugins` do servidor |
+| [Projeto completo ZIP](https://raw.githubusercontent.com/nateriver31/territorio/v2.0.0/dist/Territorio-2.0.0-projeto.zip) | Código-fonte, JAR, configurações padrão, testes e manuais |
+| [Verificação SHA-256](https://raw.githubusercontent.com/nateriver31/territorio/v2.0.0/dist/SHA256SUMS.txt) | Checksums dos arquivos distribuídos |
+| [Resultados dos testes](https://raw.githubusercontent.com/nateriver31/territorio/v2.0.0/dist/VALIDACAO.txt) | Resumo dos 47 testes automatizados aprovados |
 | [Página da versão](https://github.com/nateriver31/territorio/releases/tag/v2.0.0) | Notas, limitações e todos os downloads |
 
 O GitHub também oferece ZIP/TAR do código na página da versão. Esses arquivos automáticos são o checkout do repositório; o **projeto completo ZIP** acima é o pacote organizado da entrega.
