@@ -1,0 +1,53 @@
+name: Territorio
+version: '2.0.0'
+main: dev.nateriver.territorio.TerritorioPlugin
+description: Claims, grupos, guerras e saques para Survival+.
+author: NateRiver
+api-version: '26.2'
+softdepend: [PlaceholderAPI, TAB]
+commands:
+  territorio:
+    aliases: [t, terr]
+    description: Manual e comandos do Território.
+  claim:
+    description: Proteger o chunk atual.
+  unclaim:
+    description: Liberar o chunk atual.
+  claims:
+    description: Consultar proteção.
+  grupo:
+    aliases: [g]
+    description: Administrar seu grupo.
+  roubar:
+    description: Iniciar ou consultar saque.
+  verchunk:
+    description: Alternar marcadores de chunk.
+permissions:
+  territorio.use:
+    default: true
+  territorio.claim:
+    default: true
+  territorio.grupo:
+    default: true
+  territorio.roubar:
+    default: true
+  territorio.verchunk:
+    default: true
+  territorio.admin.inspect:
+    default: false
+  territorio.admin.rename:
+    default: false
+  territorio.admin.leader:
+    default: false
+  territorio.admin.unclaim:
+    default: false
+  territorio.admin.wars:
+    default: false
+  territorio.admin.raids:
+    default: false
+  territorio.admin.reload:
+    default: false
+  territorio.admin.bypass:
+    default: false
+  territorio.admin.force:
+    default: false

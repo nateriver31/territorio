@@ -1,0 +1,19 @@
+# Política de proteção
+
+A consulta por chunk usa mundo UUID + x/z do chunk; terrenos com mesmos dono e tipo são o mesmo território. Não há restrições de dano entre jogadores. Projéteis, TNT e pets só são atribuídos para a proteção de entidades que não são jogadores. Nenhum handler modifica inventários de jogadores, drops PvP, PvPManager, mapas ou plugins externos.
+
+O acesso de construção inclui colocar/quebrar e alterações de estado do terreno (baldes, agricultura, placas, decoração, suportes). Recipientes incluem inventários de blocos, entidades de armazenamento e ambos os lados de baús duplos. Portas, alçapões, botões, placas de pressão, sinos e mecanismos equivalentes usam a permissão separada de mecanismos. Abrir um baú não autoriza usar baldes/ignição/bonemeal/colocar entidades com o item na mão.
+
+Durante saque, a autorização temporária tem prioridade sobre uma confiança pessoal anterior: o invasor não ganha construção, portas ou ações equivalentes pela confiança antiga durante os cinco minutos. Quebras do invasor são verificadas antes e contabilizadas somente no MONITOR de um evento não cancelado. Recipientes nunca podem ser quebrados pelo invasor; suporte adjacente que derrubaria recipientes, blocos sujeitos a gravidade e decorações delicadas também é recusado. Uma porta pode ser quebrada diretamente (contabilizada como duas metades pelo serviço de saque); não pode ter seu piso removido para obter uma destruição gratuita.
+
+Explosões não destroem blocos protegidos. Fogo não queima blocos protegidos. Líquidos não entram em territórios a partir de outro proprietário/tipo. Pistões não transportam blocos através de fronteiras de território. Hoppers não transferem itens entre territórios distintos. Inventários móveis não ganham autorização automática só porque entraram num claim; transferências automáticas que envolvam entidades e claims são bloqueadas. Isso é deliberadamente conservador: use hoppers estacionários dentro do mesmo território para automação.
+
+Durante saque, pistões, atualização de redstone, dispensers, fluxo/espalhamento de líquidos, decaimento de folhas, mudanças de bloco por física e transferências automáticas em claims solo da vítima são suspensos para reduzir vias indiretas de contornar o limite. Cultivos/árvores não podem crescer para claims estrangeiros. Mudanças de blocos por entidades são bloqueadas em claims (Endermen, blocos caindo, Ravagers etc.). O saque concede apenas abrir/retirar itens manualmente dos recipientes e quebrar os blocos autorizados. Essas escolhas priorizam a integridade do limite; estruturas complexas de redstone devem ser verificadas em homologação.
+
+Inventários abertos são revalidados a cada clique/arraste. A interface é fechada quando a autorização termina; a ação inválida é cancelada. Não há rotina que esvazie inventários ou devolva itens já retirados legitimamente. Bypass administrativo só é consultado por `plugin.bypassing(UUID)` (habilitação explícita pelo comando autorizado), nunca pelo status OP implícito.
+
+## Validação
+
+A classe foi compilada contra Paper `26.2.build.135-stable` com Java 25. Testes de comportamento de eventos Bukkit exigem servidor real ou um mock da mesma API; a compilação não comprova o comportamento físico do jogo. No servidor de homologação, teste especialmente: baú duplo cruzando chunk; janela aberta antes do início/fim de saque; shift-click/arraste/tecla numérica; hopper de fora; carrinho com hopper; dispenser de baldes; pistão cruzando fronteira; areia/anvil; portas; tapetes/placas/plantas sobre suporte; explosão; fogo; árvores externas; armor stands/quadros; baldes de entidades e comandos de outros plugins que alteram blocos.
+
+Plugins que executem alterações diretas via API sem emitir eventos ou servidores modificados podem contornar listeners comuns. Isso não é corrigido modificando os demais plugins; requer integração específica se aparecer no teste real.

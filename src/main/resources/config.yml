@@ -1,0 +1,20 @@
+# Não apaga nem migra automaticamente dados de versões antigas.
+claims:
+  solo-limit: 9
+  group-per-member: 9
+groups:
+  name-min: 3
+  name-max: 32
+raid:
+  duration-seconds: 300
+  block-limit: 30
+  owner-cooldown-hours: 12
+  defense-cooldown-hours: 24
+  invader-cooldown-hours: 2
+  owner-offline-seconds: 60
+notices:
+  debounce-ticks: 20
+visual:
+  particle: HAPPY_VILLAGER
+  interval-ticks: 20
+  particles-per-corner: 2

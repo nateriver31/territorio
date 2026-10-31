@@ -1,0 +1,13 @@
+Territorio 2.0.0 — compilação final
+JDK 25.0.5+8; Maven 3.9.11; Paper API 26.2.build.135-stable
+Comando: mvn clean verify (proxy/truststore externos à fonte)
+
+dev.nateriver.territorio.DomainTest: executados=20 falhas=0 erros=0 ignorados=0
+dev.nateriver.territorio.PluginIntegrationTest: executados=8 falhas=0 erros=0 ignorados=0
+dev.nateriver.territorio.RaidBlockRulesTest: executados=5 falhas=0 erros=0 ignorados=0
+dev.nateriver.territorio.RaidSessionTest: executados=8 falhas=0 erros=0 ignorados=0
+dev.nateriver.territorio.StateStoreTest: executados=6 falhas=0 erros=0 ignorados=0
+
+TOTAL: 47 executados; 47 aprovados; 0 falhas; 0 erros; 0 ignorados.
+BUILD SUCCESS; JAR Java 25 (class major version 69).
+MockBukkit não substitui a homologação em Paper com clientes Java/Bedrock.
