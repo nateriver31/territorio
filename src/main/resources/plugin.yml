@@ -1,5 +1,5 @@
 name: Territorio
-version: '2.0.1'
+version: '2.0.2'
 main: dev.nateriver.territorio.TerritorioPlugin
 description: Claims, grupos, guerras e saques do Território.
 author: NateRiver

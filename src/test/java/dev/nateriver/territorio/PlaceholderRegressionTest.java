@@ -31,6 +31,7 @@ class PlaceholderRegressionTest {
     }
     private String value(PlayerMock player,String parameter){return expansion.onRequest(player,parameter);}
     private void emptyPrefix(PlayerMock player){
+        assertEquals("",value(player,"prefixo_minimessage"));
         assertEquals("",value(player,"tag_formatada"));assertEquals("",value(player,"cargo_simbolo"));
         assertEquals("",value(player,"grupo"));assertEquals("",value(player,"cargo"));
         assertEquals("false",value(player,"tem_grupo"));
@@ -88,5 +89,25 @@ class PlaceholderRegressionTest {
                 CompletableFuture.supplyAsync(()->List.of(value(leader,"tag"),value(leader,"grupo"),value(leader,"cargo_simbolo"))).get(5,TimeUnit.SECONDS));
         expansion.refresh();
         assertEquals("NOVA",CompletableFuture.supplyAsync(()->value(leader,"tag")).get(5,TimeUnit.SECONDS));
+    }
+
+    @Test void miniMessagePrefixRendersRanksAndTagWithoutLegacyCodesOrNickColorLeak(){
+        assertEquals("",value(leader,"prefixo_minimessage"));
+        assertEquals("",expansion.onRequest(null,"prefixo_minimessage"));
+        group();
+        for(var role:List.of(MEMBER,OFFICER,COLEADER)){
+            domain.rank(leader.getUniqueId(),member.getUniqueId(),role);expansion.refresh();
+            String prefix=value(member,"prefixo_minimessage");
+            assertFalse(prefix.contains("§"));
+            var rendered=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(prefix+"<green>Nickname</green>");
+            String plain=net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(rendered);
+            assertTrue(plain.endsWith("[ROMA] Nickname"));
+            String legacy=net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().serialize(rendered);
+            assertTrue(legacy.contains("§6"));assertTrue(legacy.endsWith("§aNickname"));
+        }
+        assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(
+                net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(value(leader,"prefixo_minimessage"))).startsWith("♛ "));
+        domain.rank(leader.getUniqueId(),member.getUniqueId(),MEMBER);
+        domain.kick(leader.getUniqueId(),member.getUniqueId());expansion.refresh();emptyPrefix(member);
     }
 }

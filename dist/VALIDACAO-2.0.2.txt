@@ -1,0 +1,7 @@
+Territorio 2.0.2 — compatibilidade LPC MiniMessage (Ayont)
+JDK25 / Paper API26.2 / Maven3.9.11
+mvn -o -s /workspace/tools/maven-settings.xml verify
+BUILD SUCCESS: 102 testes, 0 falhas, 0 erros, 0 ignorados.
+Um novo placeholder prefixo_minimessage, antigos preservados. Testado prefixo dourado/cargos, solo vazio, saída de grupo e cor do nick após prefixo. Nenhuma dependência adicional.
+Sem teste em servidor real LPC/Java/Bedrock.
+Config de exemplo fornecida pelo usuário: somente chat-format foi alterado; nenhum arquivo de plugin instalado foi modificado. Usar o placeholder novo somente com Territorio2.0.2.
