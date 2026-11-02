@@ -84,3 +84,15 @@ Quebras de saque são quebras Bukkit normais, contabilizadas após um evento nã
 O manual abre via API Adventure do Paper, sem inserir livro no inventário. Comandos não dependem de clique, o chat é privado quando aplicável e partículas são enviadas somente ao jogador. O Geyser real deve ser testado; tradução de livros, partículas e títulos depende da versão/cliente. `visual.particle` permite escolher outra partícula sem dados extras.
 
 Portais, escala Nether 1:6, avisos de fronteira e todos os arquivos do SurvivalPlusCore permanecem sob responsabilidade daquele plugin.
+
+## LPC MiniMessage (Ayont) — Território 2.0.2
+
+Este fork usa MiniMessage e não interpreta a saída legacy de `tag_formatada`. A versão 2.0.2 acrescenta somente `%territorio_prefixo_minimessage%`, contendo símbolo de cargo e TAG dourados, com estilos delimitados. Sem grupo retorna vazio, sem espaço extra. Os placeholders antigos permanecem iguais.
+
+No arquivo enviado pelo administrador, substituir somente `chat-format` por:
+
+```yaml
+chat-format: "%territorio_prefixo_minimessage%{prefix}{name}<dark_gray> »<reset> {message}"
+```
+
+O restante do formato original, prefixos LuckPerms, separador e mensagem é preservado. Após atualizar o JAR do Território com o servidor parado, iniciar e executar `/lpc reload` depois de editar o formato. Não instalar simultaneamente LPC original e LPC MiniMessage. Requer PlaceholderAPI e LuckPerms habilitados; a expansão territorio é embutida. Testar jogador com grupo/sem grupo e cargos em chat real; não altera TAB/nametags nem os arquivos externos automaticamente.

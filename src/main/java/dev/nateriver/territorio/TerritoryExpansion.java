@@ -2,6 +2,8 @@ package dev.nateriver.territorio;
 
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.OfflinePlayer;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import java.util.*;
 
 /** Immutable snapshot: TAB may resolve placeholders from an asynchronous thread. */
@@ -18,7 +20,7 @@ public final class TerritoryExpansion extends PlaceholderExpansion {
     }
     @Override public String getIdentifier(){return "territorio";}
     @Override public String getAuthor(){return "NateRiver";}
-    @Override public String getVersion(){return "2.0.1";}
+    @Override public String getVersion(){return "2.0.2";}
     @Override public boolean persist(){return true;}
     @Override public String onRequest(OfflinePlayer player,String parameter){
         Values values=player==null?null:snapshot.get(player.getUniqueId());
@@ -28,6 +30,8 @@ public final class TerritoryExpansion extends PlaceholderExpansion {
             case "grupo"->values==null?"":values.group;
             case "cargo"->values==null?"":values.role;
             case "cargo_simbolo"->values==null?"":values.symbol;
+            case "prefixo_minimessage"->values==null?"":MiniMessage.miniMessage().serialize(
+                    LegacyComponentSerializer.legacySection().deserialize(values.symbol+"§6["+values.tag+"]§r "));
             case "tem_grupo"->Boolean.toString(values!=null);
             default->null;
         };
