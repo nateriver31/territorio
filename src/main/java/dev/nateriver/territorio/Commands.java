@@ -32,6 +32,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     private TerritoryExpansion expansion;
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss z").withZone(ZoneId.of("America/Sao_Paulo"));
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
+    private static final Set<String> GROUP_ACTIONS=Set.of("criar","convidar","aceitar","recusar","info","lista","membros","cargo","lider","expulsar","sair","dissolver","grupos","desfazer");
     private record Territory(Kind kind, UUID owner) {}
 
     public Commands(TerritorioPlugin plugin, Domain d, RaidService raids) {
@@ -74,6 +75,12 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             }
             Player p = player(sender); require(sender, "territorio.use");
             UUID who = p.getUniqueId();
+            boolean grouped=args.length>0&&args[0].equalsIgnoreCase("grupo");
+            if(grouped) {
+                require(p,"territorio.grupo"); need(args,2,"/t grupo criar|convidar|aceitar|recusar|info|lista|membros|cargo|lider|expulsar|sair|dissolver");
+                args=Arrays.copyOfRange(args,1,args.length);
+                if(!GROUP_ACTIONS.contains(lower(args[0])))throw error("Subcomando de grupo desconhecido. Use /t para consultar o manual.");
+            }
             if (args.length == 0 || Set.of("ajuda", "help").contains(lower(args[0]))) { manual(p); return true; }
             String action = lower(args[0]);
             switch (action) {
@@ -89,35 +96,36 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
                 }
                 case "claims" -> claimInfo(p);
                 case "info" -> {
-                    if (args.length > 1) groupInfo(p, targetGroup(join(args,1)));
+                    if(grouped)groupInfo(p,args.length>1?targetGroup(join(args,1)):myGroup(who));
+                    else if (args.length > 1) groupInfo(p, targetGroup(join(args,1)));
                     else { Group g = d.group(who); if (g != null) groupInfo(p,g); claimInfo(p); }
                 }
                 case "criar" -> {
-                    require(p, "territorio.grupo"); need(args,3,"/t criar TAG Nome do grupo");
+                    require(p, "territorio.grupo"); need(args,3,"/t grupo criar TAG Nome do grupo");
                     Group g = d.create(who,join(args,2),args[1]); tell(p,"§aGrupo criado: §6["+g.tag+"] §f"+g.name+".");
                 }
                 case "convidar" -> {
-                    require(p,"territorio.grupo"); need(args,2,"/t convidar Jogador"); UUID target = targetPlayer(args[1]); d.invite(who,target);
+                    require(p,"territorio.grupo"); need(args,2,"/t grupo convidar Jogador"); UUID target = targetPlayer(args[1]); d.invite(who,target);
                     tell(p,"§aConvite enviado. Expira em cinco minutos.");
-                    privateMessage(target,"§eVocê recebeu um convite de §6["+myGroup(who).tag+"]§e. Use /t aceitar ou /t recusar em até cinco minutos.");
+                    privateMessage(target,"§eVocê recebeu um convite de §6["+myGroup(who).tag+"]§e. Use /t grupo aceitar ou /t grupo recusar em até cinco minutos.");
                 }
                 case "aceitar" -> { require(p,"territorio.grupo"); d.accept(who); tell(p,"§aConvite aceito. Você entrou em §6["+myGroup(who).tag+"]."); notifyGroup(myGroup(who).id,"§a"+p.getName()+" entrou no grupo."); }
                 case "recusar" -> { require(p,"territorio.grupo"); d.refuse(who); tell(p,"§eConvite recusado."); }
                 case "sair" -> { require(p,"territorio.grupo"); Group old=myGroup(who); d.leave(who); tell(p,"§eVocê saiu do grupo. Aguarde duas horas para criar ou entrar em outro."); notifyGroup(old.id,"§e"+p.getName()+" saiu do grupo."); }
                 case "expulsar" -> {
-                    require(p,"territorio.grupo"); need(args,2,"/t expulsar Jogador"); UUID target=targetPlayer(args[1]); d.kick(who,target); tell(p,"§aIntegrante expulso."); privateMessage(target,"§eVocê foi expulso do grupo. Não recebeu cooldown de entrada.");
+                    require(p,"territorio.grupo"); need(args,2,"/t grupo expulsar Jogador"); UUID target=targetPlayer(args[1]); d.kick(who,target); tell(p,"§aIntegrante expulso."); privateMessage(target,"§eVocê foi expulso do grupo. Não recebeu cooldown de entrada.");
                 }
                 case "cargo" -> {
-                    require(p,"territorio.grupo"); need(args,3,"/t cargo Jogador membro|oficial|colider"); UUID target=targetPlayer(args[1]); Role role=parseRole(args[2]);
-                    if (role==Role.LEADER) throw error("Use /t lider Jogador confirmar para transferir a liderança.");
+                    require(p,"territorio.grupo"); need(args,3,"/t grupo cargo Jogador membro|oficial|colider"); UUID target=targetPlayer(args[1]); Role role=parseRole(args[2]);
+                    if (role==Role.LEADER) throw error("Use /t grupo lider Jogador confirmar para transferir a liderança.");
                     d.rank(who,target,role); tell(p,"§aCargo atualizado."); privateMessage(target,"§eSeu cargo agora é "+roleName(role)+".");
                 }
                 case "lider" -> {
-                    require(p,"territorio.grupo"); need(args,3,"/t lider Jogador confirmar"); if (!args[2].equalsIgnoreCase("confirmar")) throw error("Confirme com /t lider Jogador confirmar.");
+                    require(p,"territorio.grupo"); need(args,3,"/t grupo lider Jogador confirmar"); if (!args[2].equalsIgnoreCase("confirmar")) throw error("Confirme com /t grupo lider Jogador confirmar.");
                     UUID target=targetPlayer(args[1]); d.rank(who,target,Role.LEADER); tell(p,"§aLiderança transferida."); privateMessage(target,"§eVocê agora é líder do grupo.");
                 }
                 case "dissolver", "desfazer" -> {
-                    require(p,"territorio.grupo"); need(args,2,"/t dissolver confirmar"); if (!args[1].equalsIgnoreCase("confirmar")) throw error("Use /t dissolver confirmar. Claims coletivos serão liberados; blocos e claims pessoais serão preservados.");
+                    require(p,"territorio.grupo"); need(args,2,"/t grupo dissolver confirmar"); if (!args[1].equalsIgnoreCase("confirmar")) throw error("Use /t grupo dissolver confirmar. Claims coletivos serão liberados; blocos e claims pessoais serão preservados.");
                     Group old=myGroup(who); List<UUID> members=List.copyOf(old.members.keySet()); d.dissolve(who);
                     for(UUID member:members) privateMessage(member,"§eO grupo foi dissolvido. Claims coletivos foram liberados; claims pessoais continuam protegidos.");
                 }
@@ -143,19 +151,35 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
 
     private void war(Player p,String[] a) {
-        require(p,"territorio.grupo"); need(a,2,"/t guerra declarar TAG | /t guerra status");
+        require(p,"territorio.grupo"); need(a,2,"/t guerra TAG | /t guerra status | /t guerra historico");
         String act=lower(a[1]);
-        if(act.equals("status")) { Group g=myGroup(p.getUniqueId()); List<War> wars=d.s.wars.stream().filter(w->w.ended==0 && involves(w,g.id)).toList(); if(wars.isEmpty())tell(p,"§eSeu grupo não está em guerra."); else for(War w:wars) warLine(p,w); return; }
-        if(Set.of("paz","aceitarpaz","recusarpaz").contains(act)) { need(a,3,"/t guerra "+act+" TAG"); peace(p,new String[]{"paz",act.equals("paz")?"propor":act.equals("aceitarpaz")?"aceitar":"recusar",join(a,2)}); return; }
-        if(!act.equals("declarar"))throw error("Use /t guerra declarar TAG ou /t guerra status.");
-        need(a,3,"/t guerra declarar TAG"); Group target=targetGroup(join(a,2)); Group origin=myGroup(p.getUniqueId());
+        if(act.equals("status")) { if(a.length!=2)throw error("Use /t guerra status."); Group g=myGroup(p.getUniqueId()); List<War> wars=d.s.wars.stream().filter(w->w.ended==0 && involves(w,g.id)).toList(); if(wars.isEmpty())tell(p,"§eSeu grupo não está em guerra."); else for(War w:wars) warLine(p,w); return; }
+        if(act.equals("historico")) { history(p,concat("guerras",Arrays.copyOfRange(a,2,a.length)),false); return; }
+        // PAZ is also a valid TAG: only the longer legacy form means a peace proposal.
+        if((act.equals("paz")&&a.length>2)||Set.of("aceitarpaz","recusarpaz").contains(act)) { need(a,3,"/t guerra "+act+" TAG"); peace(p,new String[]{"paz",act.equals("paz")?"propor":act.equals("aceitarpaz")?"aceitar":"recusar",join(a,2)}); return; }
+        int targetAt=act.equals("declarar")?2:1;
+        need(a,targetAt+1,"/t guerra declarar TAG"); Group target=targetGroup(join(a,targetAt)); Group origin=myGroup(p.getUniqueId());
         d.declareWar(p.getUniqueId(),target.id,id->Bukkit.getPlayer(id)!=null);
         Bukkit.broadcast(LEGACY.deserialize("§c⚔ ["+origin.tag+"] declarou guerra a ["+target.tag+"]. Claims do atacante estão vulneráveis a todos."));
     }
     private void peace(Player p,String[] a) {
-        require(p,"territorio.grupo"); need(a,3,"/t paz propor|aceitar|recusar TAG");
-        String act=lower(a[1]); if(!Set.of("propor","aceitar","recusar").contains(act))throw error("Use /t paz propor|aceitar|recusar TAG.");
-        Group target=targetGroup(join(a,2)), origin=myGroup(p.getUniqueId()); d.peace(p.getUniqueId(),target.id,act);
+        require(p,"territorio.grupo"); need(a,2,"/t paz TAG | /t paz aceitar [TAG] | /t paz recusar [TAG]");
+        String act=lower(a[1]); Group origin=myGroup(p.getUniqueId()),target;
+        if(!d.isLeader(p.getUniqueId()))throw error("Somente o líder pode fazer isso.");
+        if(Set.of("aceitar","recusar").contains(act)) {
+            if(a.length>2)target=targetGroup(join(a,2));
+            else {
+                List<War> offers=peaceOffers(origin.id);
+                if(offers.isEmpty())throw error("Nenhuma proposta de paz recebida.");
+                if(offers.size()>1)throw error("Há várias propostas de paz. Use /t paz "+act+" TAG: "+offers.stream().map(w->d.s.groups.get(w.peaceFrom).tag).sorted().collect(Collectors.joining(", "))+".");
+                target=d.s.groups.get(offers.getFirst().peaceFrom);
+            }
+        } else {
+            int targetAt=act.equals("propor")?2:1;
+            need(a,targetAt+1,"/t paz TAG ou /t paz propor TAG");
+            target=targetGroup(join(a,targetAt)); act="propor";
+        }
+        d.peace(p.getUniqueId(),target.id,act);
         if(act.equals("propor")) {
             notifyGroup(target.id,"§e["+origin.tag+"] propôs paz ao seu grupo. O líder pode usar /t paz aceitar "+origin.tag+" ou /t paz recusar "+origin.tag+".");
             notifyGroup(origin.id,"§eProposta de paz enviada a ["+target.tag+"].");
@@ -164,6 +188,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             notifyGroup(target.id,text); notifyGroup(origin.id,text);
         }
     }
+    private List<War> peaceOffers(UUID group) {return d.s.wars.stream().filter(w->w.ended==0&&involves(w,group)&&w.peaceFrom!=null&&!w.peaceFrom.equals(group)).toList();}
     private void allies(Player p,String[] a) {
         require(p,"territorio.grupo"); Group origin=myGroup(p.getUniqueId());
         String act=a.length<2?"lista":lower(a[1]);
@@ -254,23 +279,34 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
 
     private void manual(Player p) {
-        List<Component> pages=List.of(
-            pageText("Território\nSurvival+\n\nProteja chunks, forme grupos e participe de guerras.\n\nO PvP continua normal em todo o servidor.\n\n/t abre este manual."),
-            pageText("Claims\n\n/t claim\nProtege o chunk atual.\n/t unclaim\nRemove a proteção.\n/t claims\nConsulta as claims.\n\nSolo: até 9 chunks.\n/verchunk mostra os cantos do chunk."),
-            pageText("Grupo e chunk pessoal\n\nCada membro contribui com 9 chunks coletivos.\n\n/t claim pessoal\nProtege 1 chunk extra privado.\n\n/t confiar Jogador\n/t desconfiar Jogador\nAcesso às suas claims individuais."),
-            pageText("Criar e entrar\n\n/t criar TAG Nome\nTAG: 2 a 5 caracteres.\nNome e TAG são fixos.\n\n/t convidar Jogador\n/t aceitar\n/t recusar\nConvites duram 5 min.\n\n/t info e /t lista"),
-            pageText("Cargos\n\nLíder: diplomacia e gestão.\nColíder: gestão, só um.\nOficial: pode convidar.\nMembro: usa as claims.\n\nTodos constroem nas claims coletivas.\n\n/t cargo Jogador cargo"),
-            pageText("Saída e limites\n\n/t sair\nEspera de 2h para entrar ou criar outro grupo.\n\n/t expulsar Jogador\nSem espera para expulso.\n\nExcesso de claims bloqueia novas claims. Não apaga blocos ou libera terrenos."),
-            pageText("Liderança\n\n/t lider Jogador confirmar\nTransfere liderança.\n\nAo sair, assume colíder, oficial ou membro mais antigo.\n\n/t dissolver confirmar\nLibera claims coletivos. Preserva claims pessoais e os blocos."),
-            pageText("Alianças\n\n/t aliados propor TAG\n/t aliados aceitar TAG\n/t aliados recusar TAG\n/t aliados remover TAG\n\nSomente líderes decidem. Os acessos começam desativados."),
-            pageText("Acesso de aliados\n\n/t aliados permissao TAG portas sim\nTipos: portas, recipientes, construcao.\nUse nao para revogar.\n\nConstrução vale para colocar e quebrar. Aliança não dá administração."),
-            pageText("Guerras\n\n/t guerra declarar TAG\nLíderes dos dois grupos precisam estar online.\n\nClaims do atacante ficam abertos a todos. Defensor é vulnerável aos atacantes.\n\nSem saída, expulsão ou retirada de claims na guerra."),
-            pageText("Paz e histórico\n\n/t paz propor TAG\n/t paz aceitar TAG\n/t paz recusar TAG\n\nSomente líderes decidem.\n\n/t guerra status\n/t guerras [página]\nMostra início, fim e resultado."),
-            pageText("Saques de solo\n\nEntre no claim e use /roubar. Dono deve estar online.\n\nDura 5 minutos, todos os claims solo do dono.\nUm invasor, até 30 blocos, mineração mais lenta.\n\n/roubar status"),
-            pageText("Durante o saque\n\nPode abrir baús e barris e retirar itens sem limite.\n\nNão pode destruir recipientes nem abrir portas pela permissão de saque.\n\nApós 30 blocos, ainda pode abrir os recipientes até o fim."),
-            pageText("Defesa e cooldowns\n\nInvasor morto por jogador: defesa, identidade revelada e 24h de proteção.\n\nNormal: dono 12h, invasor 2h.\n\nDesconexão do invasor encerra. Dono offline: até 60s dentro do prazo original."),
-            pageText("Comandos rápidos\n\n/t info\n/t claim\n/t claim pessoal\n/t convidar Jogador\n/t cargo Jogador cargo\n/t guerra status\n/t aliados lista\n/verchunk\n/roubar status"));
-        p.openBook(Book.book(Component.text("Manual do Território"),Component.text("Survival+"),pages));
+        p.openBook(Book.book(Component.text("Manual do Território"),Component.text("Território"),manualPages(d.soloLimit,d.contribution)));
+    }
+    static List<Component> manualPages(int soloLimit,int contribution) {
+        return List.of(
+            pageText("Território\n\n1. Claims e proteção\n2. Grupos e cargos\n3. Guerras e paz\n4. Alianças\n5. Saques\n\n/t abre este manual.\nOs atalhos antigos continuam válidos."),
+            pageText("1. Claims\n\n/t claim\nProtege o chunk atual.\n/t unclaim\nRemove a proteção.\n/t claims\nConsulta os terrenos.\n\nSolo: até "+soloLimit+" chunks.\n/verchunk mostra os cantos."),
+            pageText("Claim pessoal\n\nCada membro soma "+contribution+" chunks coletivos.\n\n/t claim pessoal\nUm chunk extra privado.\n\n/t confiar Jogador\n/t desconfiar Jogador\nAcesso às suas claims individuais."),
+            pageText("TNT de jogador\n\nExige acesso de construção: dono, grupo, confiança, permissão explícita ou guerra. Só ser aliado não basta."),
+            pageText("Creepers\n\nA explosão usa autoria confiável. Sem ela, os claims ficam protegidos."),
+            pageText("TNT automática\n\nTNT sem autoria pode destruir claims, fora de guerra também. Isso inclui autoria perdida ao recarregar chunks. Sujeito às regras do servidor.\n\nEm saque ativo, explosões não destroem os claims da vítima."),
+            pageText("Fogo natural\n\nQuem tem permissão pode acender fogo diretamente. Terceiros sem acesso não podem.\nFogo, lava e raios podem iniciar incêndios naturais e consumir blocos. Proteções extras continuam durante saques."),
+            pageText("2. Criar grupo\n\n/t grupo criar TAG Nome\nTAG: 2 a 5 letras ou números. Nome e TAG são fixos para jogadores.\n\n/t grupo info [TAG]\n/t grupo lista [página]\n/t grupo membros [TAG]"),
+            pageText("Entrar no grupo\n\n/t grupo convidar Jogador\nConvite dura 5 minutos.\n/t grupo aceitar\n/t grupo recusar\n\nAo entrar, claims solo passam ao coletivo, respeitando os limites."),
+            pageText("Cargos\n\nLíder: gestão e diplomacia.\nColíder: gestão; só um.\nOficial: convida.\nMembro: usa coletivos.\n\n/t grupo cargo Jogador Cargo\nmembro, oficial, colider."),
+            pageText("PvP do grupo\n\nMesmo grupo não causa PvP entre si, em qualquer local.\n\nAliados, jogadores de confiança, grupos diferentes e solo mantêm PvP normal."),
+            pageText("Saída e limites\n\n/t grupo sair\nEspera: 2h para entrar ou criar grupo.\n\n/t grupo expulsar Jogador\nExpulso não tem espera.\nExcesso bloqueia novas claims. Nenhum terreno ou bloco é apagado."),
+            pageText("Liderança\n\n/t grupo lider Jogador confirmar\nAo sair, sucede o colíder, oficial ou membro mais antigo.\n\n/t grupo dissolver confirmar\nLibera coletivos. Preserva pessoais e blocos."),
+            pageText("3. Guerras\n\n/t guerra TAG\nDeclaração unilateral: não depende de aceitação.\n\nOs líderes dos dois grupos precisam estar online no início. Desconectar depois não encerra a guerra."),
+            pageText("Territórios na guerra\n\nColetivos do atacante: abertos a todos.\nColetivos do defensor: abertos aos atacantes.\n\nSolo e pessoais seguem privados.\n\nTNT automática: vale a exceção."),
+            pageText("Bloqueios e histórico\n\nNa guerra: sem saída, expulsão, dissolução, transferência de liderança, entrada ou alteração dos coletivos.\n/t guerra status\n/t guerra historico [TAG] [página]\nInício, fim e resultado."),
+            pageText("Paz\n\n/t paz TAG\nEnvia proposta. Só o líder decide.\n\n/t paz aceitar [TAG]\n/t paz recusar [TAG]\n\nUma proposta recebida: TAG opcional. Várias: informe a TAG. Recusar mantém a guerra."),
+            pageText("4. Alianças\n\n/t aliados lista\n/t aliados propor TAG\n/t aliados aceitar TAG\n/t aliados recusar TAG\n/t aliados remover TAG\n\nSomente líderes decidem. Os acessos começam desativados."),
+            pageText("Acesso de aliados\n\n/t aliados permissao TAG portas sim\nTipos: portas, recipientes, construcao. Revogar: nao.\n\nSó coletivos. Só a aliança não autoriza explosões; nunca dá administração."),
+            pageText("5. Saques de solo\n\nEntre no claim e use /roubar. Dono deve estar online.\n\nDura 5 minutos e abrange os claims solo do dono.\nUm invasor, até 30 blocos, mineração mais lenta.\n/roubar status"),
+            pageText("Blocos e recipientes\n\nPode abrir baús e barris e retirar itens sem limite. Não pode quebrar recipientes.\n\nApós 30 blocos, baús seguem acessíveis até o fim.\nExplosões e mecanismos não podem burlar o limite."),
+            pageText("Redstone no saque\n\nDono e invasor usam botões, alavancas e placas de pressão.\n\nSem acesso para terceiros.\n\nPistões e dispensers continuam sujeitos às proteções do saque."),
+            pageText("Portas no saque\n\nO saque não permite abrir portas ou alçapões manualmente.\n\nPorém, circuitos acionados pelo invasor podem abri-los."),
+            pageText("Defesa e cooldowns\n\nInvasor morto por jogador: defesa, identidade revelada e 24h de proteção.\nNormal: dono 12h, invasor 2h.\n\nInvasor desconecta: encerra. Dono offline: até 60s, dentro do prazo original."));
     }
     private static Component pageText(String text){ return Component.text(text); }
 
@@ -323,7 +359,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             if(proposal!=null && proposal.expires>d.now()) tell(p,"§eHá uma proposta de aliança de "+groupName(proposal.from)+". Use /t aliados aceitar TAG ou /t aliados recusar TAG.");
         }
         // Invitations are persisted; no notification is lost when the recipient logs in later.
-        if(d.s.invites.containsKey(p.getUniqueId()) && d.s.invites.get(p.getUniqueId()).expires>d.now())tell(p,"§eVocê possui um convite de grupo. Use /t aceitar ou /t recusar; convites vencem em cinco minutos.");
+        if(d.s.invites.containsKey(p.getUniqueId()) && d.s.invites.get(p.getUniqueId()).expires>d.now())tell(p,"§eVocê possui um convite de grupo. Use /t grupo aceitar ou /t grupo recusar; convites vencem em cinco minutos.");
     }
     @EventHandler(priority=EventPriority.MONITOR)
     public void quit(PlayerQuitEvent e) {
@@ -336,13 +372,13 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
         pending.put(id,Bukkit.getScheduler().runTaskLater(plugin,()->{
             pending.remove(id); if(!p.isOnline())return; Territory current=territory(p.getLocation()),last=announced.get(id);
             if(Objects.equals(current,last))return;
-            if(last!=null)tell(p,"§c< §fVocê saiu do território de "+territoryLabel(last)+"§f.");
-            if(current!=null)tell(p,"§a> §fVocê entrou no território de "+territoryLabel(current)+"§f.");
+            if(last!=null)tell(p,"§c< §fVocê saiu do território "+territoryLabel(last)+"§f.");
+            if(current!=null)tell(p,"§a> §fVocê entrou no território "+territoryLabel(current)+"§f.");
             if(current==null)announced.remove(id);else announced.put(id,current);
         },delay));
     }
     private Territory territory(Location l){ Claim c=d.claim(chunk(l)); return c==null?null:new Territory(c.kind,c.owner); }
-    private String territoryLabel(Territory t){ Group g=t.kind==Kind.GROUP?d.s.groups.get(t.owner):null; return t.kind==Kind.GROUP?"§6["+(g==null?"grupo removido":g.tag)+"]":"§6"+name(t.owner); }
+    private String territoryLabel(Territory t){ return t.kind==Kind.GROUP?"do grupo §6"+groupName(t.owner):"de §6"+name(t.owner); }
     private String ownerLabel(Claim c){return c.kind==Kind.GROUP?groupName(c.owner):name(c.owner);}
     private String groupName(UUID id){Group g=d.s.groups.get(id);return g==null?"[grupo removido "+id.toString().substring(0,8)+"]":"["+g.tag+"] "+g.name;}
     private Group myGroup(UUID id){Group g=d.group(id);if(g==null)throw error("Você não pertence a um grupo.");return g;}
@@ -380,12 +416,18 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
         if(canonical.equals("roubar"))return raw.length==1&&sender.hasPermission("territorio.roubar")?matching(List.of("status"),raw[0]):List.of();
         if(canonical.equals("verchunk"))return List.of();
         String[] a=normalize(canonical,raw); if(a.length==0)return List.of();
+        boolean grouped=a[0].equalsIgnoreCase("grupo")&&a.length>1;
+        if(grouped) {
+            if(!sender.hasPermission("territorio.use")||!sender.hasPermission("territorio.grupo"))return List.of();
+            a=Arrays.copyOfRange(a,1,a.length);
+            if(a.length>1&&!GROUP_ACTIONS.contains(lower(a[0])))return List.of();
+        }
         List<String> options=new ArrayList<>();
         if(a.length==1) {
             if(sender.hasPermission("territorio.use"))options.addAll(List.of("ajuda","info","guerras"));
             if(sender.hasPermission("territorio.claim"))options.addAll(List.of("claim","unclaim","claims","confiar","desconfiar"));
             if(sender instanceof Player p&&sender.hasPermission("territorio.grupo")) {
-                Group g=d.group(p.getUniqueId());options.addAll(List.of("lista","membros"));
+                Group g=d.group(p.getUniqueId());options.addAll(List.of("grupo","lista","membros"));
                 if(g==null)options.addAll(List.of("criar","aceitar","recusar"));
                 else {
                     Role role=g.members.get(p.getUniqueId()).role;options.addAll(List.of("aliados","guerra"));
@@ -396,6 +438,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
                 }
             }
             if(hasAdmin(sender))options.add("admin");
+            if(grouped)options.removeIf(option->!GROUP_ACTIONS.contains(option));
         } else if(a[0].equalsIgnoreCase("admin")) {
             Map<String,String> nodes=Map.of("inspecionar","inspect","nome","rename","tag","rename","lider","leader","removerclaim","unclaim","guerras","wars","saques","raids","reload","reload","bypass","bypass","encerrarguerra","force");
             if(a.length==2)nodes.forEach((command,node)->{if(sender.hasPermission("territorio.admin."+node))options.add(command);});
@@ -412,15 +455,17 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
                 case "confiar","desconfiar"->{if(sender.hasPermission("territorio.claim"))Bukkit.getOnlinePlayers().forEach(q->options.add(q.getName()));}
                 case "expulsar","cargo","lider"->{if(g!=null&&sender.hasPermission("territorio.grupo")&&d.mayManage(p.getUniqueId()))g.members.keySet().stream().filter(id->!id.equals(p.getUniqueId())).forEach(id->options.add(name(id)));}
                 case "dissolver","desfazer"->{if(d.isLeader(p.getUniqueId())&&!d.inWar(g.id))options.add("confirmar");}
-                case "guerra"->{if(g!=null){options.add("status");if(d.isLeader(p.getUniqueId()))options.addAll(List.of("declarar","paz","aceitarpaz","recusarpaz"));}}
-                case "paz"->{if(d.isLeader(p.getUniqueId()))options.addAll(List.of("propor","aceitar","recusar"));}
+                case "guerra"->{options.add("historico");if(g!=null){options.add("status");if(d.isLeader(p.getUniqueId())){options.addAll(List.of("declarar","paz","aceitarpaz","recusarpaz"));options.addAll(groupTags());}}}
+                case "paz"->{if(d.isLeader(p.getUniqueId())){options.addAll(List.of("propor","aceitar","recusar"));options.addAll(groupTags());}}
                 case "aliados","alianca"->{if(g!=null){options.add("lista");if(d.isLeader(p.getUniqueId()))options.addAll(List.of("propor","aceitar","recusar","remover","permissao"));}}
                 default->{}
             };
             if(a.length==3) {
                 if(action.equals("cargo")&&d.mayManage(p.getUniqueId())){options.addAll(List.of("membro","oficial"));if(d.isLeader(p.getUniqueId()))options.add("colider");}
                 if(action.equals("lider")&&d.isLeader(p.getUniqueId()))options.add("confirmar");
-                if(Set.of("guerra","paz","aliados","alianca").contains(action)&&d.isLeader(p.getUniqueId()))options.addAll(groupTags());
+                if(action.equals("guerra")&&a[1].equalsIgnoreCase("historico"))options.addAll(groupTags());
+                else if(action.equals("paz")&&Set.of("aceitar","recusar").contains(lower(a[1]))&&d.isLeader(p.getUniqueId()))peaceOffers(g.id).forEach(w->options.add(d.s.groups.get(w.peaceFrom).tag));
+                else if(Set.of("guerra","paz","aliados","alianca").contains(action)&&d.isLeader(p.getUniqueId()))options.addAll(groupTags());
             }
             if(a.length==4&&Set.of("aliados","alianca").contains(action)&&a[1].equalsIgnoreCase("permissao")&&d.isLeader(p.getUniqueId()))options.addAll(List.of("portas","recipientes","construcao"));
             if(a.length==5&&Set.of("aliados","alianca").contains(action)&&a[1].equalsIgnoreCase("permissao")&&d.isLeader(p.getUniqueId()))options.addAll(List.of("sim","nao"));

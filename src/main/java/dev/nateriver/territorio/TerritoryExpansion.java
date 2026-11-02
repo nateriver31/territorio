@@ -8,17 +8,17 @@ import java.util.*;
 public final class TerritoryExpansion extends PlaceholderExpansion {
     private final Domain domain;
     private volatile Map<UUID, Values> snapshot=Map.of();
-    private record Values(String tag,String group,String role){}
+    private record Values(String tag,String group,String role,String symbol){}
     public TerritoryExpansion(Domain domain){this.domain=domain;refresh();}
     /** Call only on the server thread, after group mutations. */
     public void refresh(){
         Map<UUID,Values> next=new HashMap<>();
-        for(Domain.Group group:domain.s.groups.values())for(Domain.Member member:group.members.values())next.put(member.player,new Values(group.tag,group.name,Commands.roleName(member.role)));
+        for(Domain.Group group:domain.s.groups.values())for(Domain.Member member:group.members.values())next.put(member.player,new Values(group.tag,group.name,Commands.roleName(member.role),roleSymbol(member.role)));
         snapshot=Map.copyOf(next);
     }
     @Override public String getIdentifier(){return "territorio";}
     @Override public String getAuthor(){return "NateRiver";}
-    @Override public String getVersion(){return "2.0.0";}
+    @Override public String getVersion(){return "2.0.1";}
     @Override public boolean persist(){return true;}
     @Override public String onRequest(OfflinePlayer player,String parameter){
         Values values=player==null?null:snapshot.get(player.getUniqueId());
@@ -27,8 +27,12 @@ public final class TerritoryExpansion extends PlaceholderExpansion {
             case "tag_formatada"->values==null?"":"§6["+values.tag+"]§r ";
             case "grupo"->values==null?"":values.group;
             case "cargo"->values==null?"":values.role;
+            case "cargo_simbolo"->values==null?"":values.symbol;
             case "tem_grupo"->Boolean.toString(values!=null);
             default->null;
         };
+    }
+    private static String roleSymbol(Domain.Role role){
+        return switch(role){case LEADER->"§6♛§r ";case COLEADER->"§6◆§r ";case OFFICER->"§6•§r ";case MEMBER->"";};
     }
 }

@@ -1,0 +1,22 @@
+Território 2.0.1 — validação automatizada
+Base: 8b37a795a13ceae5c6ba6feb460bea8c8fb18b41
+JDK: Temurin 25.0.5+8; Maven 3.9.11
+Paper API: 26.2.build.135-stable; MockBukkit: 4.117.0
+Comando: mvn -s /workspace/tools/maven-settings.xml clean verify (JAVA_HOME JDK25; settings externo somente proxy)
+BUILD SUCCESS
+
+CommandsTest: testes=11, falhas=0, erros=0, ignorados=0
+DomainTest: testes=20, falhas=0, erros=0, ignorados=0
+ExplosionFireRegressionTest: testes=11, falhas=0, erros=0, ignorados=0
+GroupPvpRegressionTest: testes=16, falhas=0, erros=0, ignorados=0
+PlaceholderRegressionTest: testes=4, falhas=0, erros=0, ignorados=0
+PluginIntegrationTest: testes=8, falhas=0, erros=0, ignorados=0
+RaidBlockRulesTest: testes=5, falhas=0, erros=0, ignorados=0
+RaidMechanismRegressionTest: testes=12, falhas=0, erros=0, ignorados=0
+RaidSessionTest: testes=8, falhas=0, erros=0, ignorados=0
+StateStoreTest: testes=6, falhas=0, erros=0, ignorados=0
+
+Total: 101 testes; 0 falhas; 0 erros; 0 ignorados.
+47 testes originais + 54 regressões novas.
+Sem conexão a servidor ou clientes Minecraft. PvPManager real, circuitos reais e Java/Bedrock não foram homologados.
+O log SEVERE esperado do teste de corrupção não representa falha. Avisos do simulador/ByteBuddy e construtor obsoleto do teste original permanecem visíveis no log Maven.

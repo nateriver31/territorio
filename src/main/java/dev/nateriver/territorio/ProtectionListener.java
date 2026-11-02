@@ -14,15 +14,20 @@ import org.bukkit.event.vehicle.*;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.inventory.*;
 import org.bukkit.projectiles.ProjectileSource;
+import org.bukkit.projectiles.BlockProjectileSource;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 
 import java.util.*;
 
-/** All Bukkit access is confined to the server thread. Never changes player damage/PvP. */
+/** All Bukkit access is confined to the server thread. Combat policy only forbids same-group damage. */
 public final class ProtectionListener implements Listener {
     private final TerritorioPlugin plugin;
     private final Domain domain;
     private final RaidService raids;
     private final Map<UUID, Long> deniedAt = new HashMap<>();
+    private final Map<PotionSplashEvent, Map<LivingEntity,Double>> potionBuffs = new IdentityHashMap<>();
+    private final Map<AreaEffectCloudApplyEvent, List<LivingEntity>> cloudBuffs = new IdentityHashMap<>();
     private static final BlockFace[] FACES = {BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH,
             BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
 
@@ -61,6 +66,14 @@ public final class ProtectionListener implements Listener {
         return b.getBlockData() instanceof Openable || b.getBlockData() instanceof org.bukkit.block.data.type.Switch
                 || n.endsWith("PRESSURE_PLATE") || n.equals("TRIPWIRE") || n.equals("TRIPWIRE_HOOK")
                 || Set.of("BELL", "NOTE_BLOCK", "REPEATER", "COMPARATOR", "DAYLIGHT_DETECTOR").contains(n);
+    }
+    private boolean raidTrigger(Block b) {
+        return b.getBlockData() instanceof org.bukkit.block.data.type.Switch
+                || b.getType().name().endsWith("PRESSURE_PLATE");
+    }
+    private boolean triggerAccess(Player p, Block b) {
+        return access(p,b,Domain.Access.MECHANISMS)
+                || (raidTrigger(b) && raids.canRaid(p.getUniqueId(),claim(b)));
     }
     private boolean raided(Block b) {
         Domain.Claim c = claim(b);
@@ -148,7 +161,8 @@ public final class ProtectionListener implements Listener {
             return;
         }
         Domain.Access a=storage(b) ? Domain.Access.CONTAINERS : mechanism(b) ? Domain.Access.MECHANISMS : Domain.Access.BUILD;
-        if (!access(e.getPlayer(),b,a)) {
+        boolean allowed = a == Domain.Access.MECHANISMS ? triggerAccess(e.getPlayer(),b) : access(e.getPlayer(),b,a);
+        if (!allowed) {
             e.setUseInteractedBlock(Event.Result.DENY);e.setUseItemInHand(Event.Result.DENY);denied(e.getPlayer());
         }
         // Do not let a permitted container/door interaction grant bucket, bone meal, ignition, or item placement rights.
@@ -228,15 +242,41 @@ public final class ProtectionListener implements Listener {
                 e.setCancelled(true);return;
             }
     }
+    private Player explosionActor(Entity source) {
+        if (source instanceof Creeper creeper) {
+            // Explicit ignition takes precedence over a mob's unrelated current target.
+            if (creeper.getIgniter()!=null) return actor(creeper.getIgniter());
+            if (!creeper.isIgnited() && creeper.getTarget() instanceof Player player) return player;
+            return null;
+        }
+        return actor(source);
+    }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
-    public void explode(EntityExplodeEvent e) {e.blockList().removeIf(b->claim(b)!=null);}
+    public void explode(EntityExplodeEvent e) {
+        Player player=explosionActor(e.getEntity());
+        // Approved cannon exception: TNT without a traceable player, including a lost source.
+        boolean automatic=e.getEntity() instanceof TNTPrimed && player==null;
+        e.blockList().removeIf(b->raided(b) || (claim(b)!=null && !automatic
+                && (player==null || !access(player,b,Domain.Access.BUILD))));
+    }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void explodeBlock(BlockExplodeEvent e) {e.blockList().removeIf(b->claim(b)!=null);}
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
-    public void burn(BlockBurnEvent e) {if(claim(e.getBlock())!=null)e.setCancelled(true);}
+    public void burn(BlockBurnEvent e) {if(raided(e.getBlock()))e.setCancelled(true);}
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void ignite(BlockIgniteEvent e) {
-        if (claim(e.getBlock())!=null && (e.getPlayer()==null || !access(e.getPlayer(),e.getBlock(),Domain.Access.BUILD))) e.setCancelled(true);
+        Player player=e.getPlayer()!=null?e.getPlayer():actor(e.getIgnitingEntity());
+        boolean crossesDispenserBoundary=e.getIgnitingEntity() instanceof Projectile projectile
+                && projectile.getShooter() instanceof BlockProjectileSource source
+                && !same(claim(source.getBlock()),claim(e.getBlock()));
+        if (raided(e.getBlock()) || (player!=null && !access(player,e.getBlock(),Domain.Access.BUILD))
+                || (claim(e.getBlock())!=null && crossesDispenserBoundary)) e.setCancelled(true);
+    }
+    @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
+    public void prime(TNTPrimeEvent e) {
+        Player player=explosionActor(e.getPrimingEntity());
+        // Priming removes the TNT block before an explosion/BlockBreakEvent can count it.
+        if (raided(e.getBlock()) || (player!=null && !access(player,e.getBlock(),Domain.Access.BUILD))) e.setCancelled(true);
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void flow(BlockFromToEvent e) {
@@ -244,8 +284,7 @@ public final class ProtectionListener implements Listener {
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void spread(BlockSpreadEvent e) {
-        if(claim(e.getBlock())!=null && (!same(claim(e.getSource()),claim(e.getBlock())) || raided(e.getBlock())
-                || e.getNewState().getType()==Material.FIRE || e.getNewState().getType()==Material.SOUL_FIRE)) e.setCancelled(true);
+        if(claim(e.getBlock())!=null && (!same(claim(e.getSource()),claim(e.getBlock())) || raided(e.getBlock()))) e.setCancelled(true);
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void sponge(SpongeAbsorbEvent e) {
@@ -269,9 +308,19 @@ public final class ProtectionListener implements Listener {
         Block source=e.getBlock();
         BlockFace face=source.getBlockData() instanceof Directional d?d.getFacing():BlockFace.SELF;
         Block target=source.getRelative(face);
-        // Dispensers may propel projectiles farther than their adjacent target; no item dispensing while raided.
-        if (raided(source) || raided(target) || !same(claim(source),claim(target))) e.setCancelled(true);
+        boolean underRaid=raided(source) || raided(target);
+        boolean safeProjectile=source.getType()==Material.DISPENSER && switch(e.getItem().getType()) {
+            case ARROW, SPECTRAL_ARROW, SNOWBALL, EGG -> true;
+            default -> false;
+        };
+        // Keep item ejection and destructive payloads blocked during a raid; defensive arrows still work.
+        if (underRaid && !safeProjectile) {e.setCancelled(true);return;}
+        // Only automatic TNT gets the approved ownership-boundary exception, outside a raid.
+        boolean automaticTnt=source.getType()==Material.DISPENSER && e.getItem().getType()==Material.TNT;
+        if (!same(claim(source),claim(target)) && (underRaid || !automaticTnt)) e.setCancelled(true);
     }
+    @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
+    public void craft(CrafterCraftEvent e) {if(raided(e.getBlock()))e.setCancelled(true);}
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void fertilize(BlockFertilizeEvent e) {
         if(e.getPlayer()!=null) {
@@ -289,15 +338,20 @@ public final class ProtectionListener implements Listener {
     public void decay(LeavesDecayEvent e) {if(raided(e.getBlock()))e.setCancelled(true);}
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void fade(BlockFadeEvent e) {if(raided(e.getBlock()))e.setCancelled(true);}
+    private boolean supportedRaidCircuit(Block block) {
+        boolean circuit=raidTrigger(block) || block.getBlockData() instanceof Openable || switch(block.getType()) {
+            case REDSTONE_WIRE, REDSTONE_TORCH, REDSTONE_WALL_TORCH, REPEATER, COMPARATOR,
+                TRIPWIRE, TRIPWIRE_HOOK, REDSTONE_LAMP, OBSERVER, NOTE_BLOCK, TARGET,
+                DAYLIGHT_DETECTOR, DISPENSER, DROPPER, PISTON, STICKY_PISTON -> true;
+            default -> false;
+        };
+        return circuit && block.getBlockData().isSupported(block);
+    }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void physicalRaid(BlockPhysicsEvent e) {
-        if (raided(e.getBlock())) e.setCancelled(true);
         // Also prevent an outside support update from detaching a protected sign/container/etc.
-        else if (claim(e.getBlock())!=null && !same(claim(e.getBlock()),claim(e.getSourceBlock()))) e.setCancelled(true);
-    }
-    @EventHandler(priority=EventPriority.HIGHEST)
-    public void redstone(BlockRedstoneEvent e) {
-        if (raided(e.getBlock())) e.setNewCurrent(e.getOldCurrent());
+        if (claim(e.getBlock())!=null && !same(claim(e.getBlock()),claim(e.getSourceBlock()))) e.setCancelled(true);
+        else if (raided(e.getBlock()) && !supportedRaidCircuit(e.getBlock())) e.setCancelled(true);
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void entityPlace(EntityPlaceEvent e) {
@@ -313,7 +367,12 @@ public final class ProtectionListener implements Listener {
         if (claim(e.getBlock())!=null) e.setCancelled(true);
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
-    public void entityPhysical(EntityInteractEvent e) {if(claim(e.getBlock())!=null)e.setCancelled(true);}
+    public void entityPhysical(EntityInteractEvent e) {
+        Player player=e.getEntity() instanceof Player p?p
+                :e.getEntity() instanceof Projectile projectile && projectile.getShooter() instanceof Player p?p:null;
+        if(claim(e.getBlock())!=null && (player==null || !raidTrigger(e.getBlock())
+                || !triggerAccess(player,e.getBlock()))) e.setCancelled(true);
+    }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void form(BlockFormEvent e) {
         if(e instanceof EntityBlockFormEvent form && claim(e.getBlock())!=null) {
@@ -326,15 +385,97 @@ public final class ProtectionListener implements Listener {
         if(entity instanceof AreaEffectCloud cloud && cloud.getSource() instanceof Player p)return p;
         if(entity instanceof TNTPrimed tnt && tnt.getSource() instanceof Player p)return p;
         if(entity instanceof Tameable tameable && tameable.getOwner() instanceof Player p)return p;
+        if(entity instanceof LightningStrike lightning)return lightning.getCausingPlayer();
         return null;
     }
+    private boolean sameGroup(Player source, Player target) {
+        if(source==null || source.getUniqueId().equals(target.getUniqueId()))return false;
+        Domain.Group group=domain.group(source.getUniqueId()), other=domain.group(target.getUniqueId());
+        return group!=null && other!=null && group.id.equals(other.id);
+    }
+    private boolean friendlyFire(Entity source, Entity target) {
+        return target instanceof Player player && sameGroup(actor(source),player);
+    }
+    @EventHandler(priority=EventPriority.LOWEST, ignoreCancelled=true)
+    public void groupDamage(EntityDamageByEntityEvent e) {
+        if(friendlyFire(e.getDamager(),e.getEntity()))e.setCancelled(true);
+    }
+    @EventHandler(priority=EventPriority.LOWEST, ignoreCancelled=true)
+    public void groupCombust(EntityCombustByEntityEvent e) {
+        if(friendlyFire(e.getCombuster(),e.getEntity()))e.setCancelled(true);
+    }
+    @SuppressWarnings("deprecation")
+    private boolean harmful(Collection<PotionEffect> effects) {
+        return effects.stream().anyMatch(effect->effect.getType().getEffectCategory()==PotionEffectType.Category.HARMFUL);
+    }
+    @SuppressWarnings("deprecation")
+    private boolean hasBuff(Collection<PotionEffect> effects) {
+        return effects.stream().anyMatch(effect->effect.getType().getEffectCategory()!=PotionEffectType.Category.HARMFUL);
+    }
+    @EventHandler(priority=EventPriority.LOWEST, ignoreCancelled=true)
+    public void groupSplash(PotionSplashEvent e) {
+        if(!plugin.getServer().getPluginManager().isPluginEnabled("PvPManager"))return;
+        Player source=actor(e.getPotion());
+        Collection<PotionEffect> effects=e.getPotion().getEffects();
+        if(source==null || effects.isEmpty())return;
+        Map<LivingEntity,Double> buffs=new LinkedHashMap<>();
+        boolean preserveBuffs=hasBuff(effects);
+        // Zero intensity removes the target from Paper's affected map, before PvPManager's monitors.
+        for(LivingEntity target:List.copyOf(e.getAffectedEntities()))
+            if(target instanceof Player player && sameGroup(source,player)) {
+                if(preserveBuffs)buffs.put(target,e.getIntensity(target));
+                e.setIntensity(target,0);
+            }
+        if(!buffs.isEmpty())potionBuffs.put(e,buffs);
+    }
+    @EventHandler(priority=EventPriority.LOWEST, ignoreCancelled=true)
+    public void groupCloud(AreaEffectCloudApplyEvent e) {
+        if(!plugin.getServer().getPluginManager().isPluginEnabled("PvPManager"))return;
+        AreaEffectCloud cloud=e.getEntity();
+        Player source=actor(cloud);
+        if(source==null)return;
+        List<PotionEffect> effects=new ArrayList<>(cloud.getCustomEffects());
+        if(cloud.getBasePotionType()!=null)effects.addAll(cloud.getBasePotionType().getPotionEffects());
+        if(effects.isEmpty())return;
+        List<LivingEntity> buffs=new ArrayList<>();
+        boolean preserveBuffs=hasBuff(effects);
+        e.getAffectedEntities().removeIf(target->{
+            if(!(target instanceof Player player) || !sameGroup(source,player))return false;
+            if(preserveBuffs)buffs.add(target);
+            return true;
+        });
+        if(!buffs.isEmpty())cloudBuffs.put(e,buffs);
+    }
+    // Deliberate compatibility exception: after PvPManager 4.0.22's MONITOR, restore buff
+    // recipients for vanilla application. Never synthesize effects, durations or combat timers.
+    // Individual harmful effects of mixed potions are blocked by groupEffect below.
+    @EventHandler(priority=EventPriority.MONITOR)
+    public void restorePotionBuffs(PotionSplashEvent e) {
+        Map<LivingEntity,Double> buffs=potionBuffs.remove(e);
+        if(buffs!=null && !e.isCancelled())buffs.forEach((target,intensity)->{
+            if(!e.getAffectedEntities().contains(target))e.setIntensity(target,intensity);
+        });
+    }
+    @EventHandler(priority=EventPriority.MONITOR)
+    public void restoreCloudBuffs(AreaEffectCloudApplyEvent e) {
+        List<LivingEntity> buffs=cloudBuffs.remove(e);
+        if(buffs!=null && !e.isCancelled())for(LivingEntity target:buffs)
+            if(!e.getAffectedEntities().contains(target))e.getAffectedEntities().add(target);
+    }
+    @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
+    public void groupEffect(EntityPotionEffectEvent e) {
+        if(e.getNewEffect()!=null && harmful(List.of(e.getNewEffect())) && friendlyFire(e.getSource(),e.getEntity()))e.setCancelled(true);
+    }
     private boolean canHarmEntity(Entity target,Entity source) {
-        if(target instanceof Player) return true; // PvPManager owns combat policy, including projectiles.
+        if(target instanceof Player) return true; // Other players remain subject to PvPManager's policy.
         Domain.Claim c=claim(target.getLocation()); if(c==null)return true;
         Player p=actor(source);return p!=null && access(p,c,Domain.Access.BUILD);
     }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
-    public void entityDamage(EntityDamageByEntityEvent e) {if(!canHarmEntity(e.getEntity(),e.getDamager()))e.setCancelled(true);}
+    public void entityDamage(EntityDamageByEntityEvent e) {
+        // Reassert after PvPManager 4.0.22's HIGHEST override, before its MONITOR combat tagging.
+        if(friendlyFire(e.getDamager(),e.getEntity()) || !canHarmEntity(e.getEntity(),e.getDamager()))e.setCancelled(true);
+    }
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void hanging(HangingBreakEvent e) {
         if (claim(e.getEntity().getLocation())==null)return;
