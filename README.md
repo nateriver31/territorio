@@ -1,4 +1,4 @@
-# Território 2.0.1
+# Território 2.0.1 (Codex IA)
 
 Plugin para **Paper 26.2 / Java 25**. Correções pontuais do beta 2.0: explosões, TAGs, PvP do mesmo grupo, avisos, fogo natural, redstone em saques e comandos/manual.
 
