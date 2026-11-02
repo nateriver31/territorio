@@ -1,10 +1,10 @@
 name: Territorio
-version: '2.0.0'
+version: '2.0.1'
 main: dev.nateriver.territorio.TerritorioPlugin
-description: Claims, grupos, guerras e saques para Survival+.
+description: Claims, grupos, guerras e saques do Território.
 author: NateRiver
 api-version: '26.2'
-softdepend: [PlaceholderAPI, TAB]
+softdepend: [PlaceholderAPI, TAB, PvPManager]
 commands:
   territorio:
     aliases: [t, terr]

@@ -1,5 +1,9 @@
 # Instalação e atualização — Território 2.0
 
+## Atualização do beta 2.0.0 para 2.0.1
+
+Com o servidor parado e backup feito, substitua somente o JAR por `Territorio-2.0.1.jar`. Preserve `state.json`, backups, auditoria e `config.yml`: o esquema 2 permanece o mesmo. Esta atualização não exige wipe, exclusão ou migração de dados. Configure TAGs manualmente conforme [INTEGRACOES.md](INTEGRACOES.md) e homologue as regras do beta.
+
 ## Requisitos
 
 - Paper **26.2**, executado com **Java 25**. Confirme com `java -version` e no log de inicialização do Paper; não basta o painel mostrar uma versão selecionada.
@@ -68,4 +72,4 @@ No TAB, insira a TAG formatada do Território antes do prefixo/nome existente no
 
 Pare o servidor, faça backup da pasta do Território, troque apenas o JAR e leia as notas da versão. Não apague o estado 2.0 para atualizar. A recarga própria de configuração não substitui reiniciar o processo para atualizar classes. Mudanças de limites não autorizam remoção arbitrária de claims; grupos acima da capacidade precisam regularizar conforme regra documentada.
 
-Este documento não afirma testes em Crafty, Geyser ou no Survival+ real. Consulte o relatório da entrega para saber quais verificações foram executadas.
+Este documento não afirma testes em Crafty, Geyser ou no servidor real. Consulte o relatório da entrega para saber quais verificações foram executadas.

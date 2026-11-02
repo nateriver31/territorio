@@ -5,7 +5,7 @@
 - `Domain`: regras e estado sem dependência Bukkit, relógio injetável nos testes. Índice de membros e de guerras ativas; claim consultado por `(UUID mundo, chunkX, chunkZ)` em mapa.
 - `StateStore`: snapshots JSON imutáveis enviados a um único escritor assíncrono, `fsync` do arquivo temporário e substituição atômica. Backup anterior e auditoria JSONL. Nunca acessa diretórios de outros plugins.
 - `RaidService`: sessões temporárias em memória, deadlines absolutos, cooldowns persistentes, contagem privada, títulos curtos e atributo de mineração transitório. Só sessões atuais concedem acesso; antes da primeira concessão, o serviço aguarda confirmação assíncrona da gravação dos cooldowns.
-- `ProtectionListener`: autorização por ação e eventos Bukkit/Paper, incluindo inventários já abertos e automação de fronteira. Não cancela dano de jogador para jogador.
+- `ProtectionListener`: autorização por ação e eventos Bukkit/Paper, incluindo inventários já abertos e automação de fronteira. Bloqueia dano atribuível entre jogadores do mesmo grupo, preservando a política externa para os demais jogadores.
 - `Commands` e `TerritoryExpansion`: comandos, livro, partículas, avisos com debounce e placeholders; o cache da expansão é imutável para consultas assíncronas do TAB.
 - `QuarantineListener`: bloqueia interações/alterações se houver falha de dados ou persistência; não desliga o servidor nem apaga dados. Pare o servidor e corrija/restaure o armazenamento antes de liberá-lo.
 
