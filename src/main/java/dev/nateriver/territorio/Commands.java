@@ -28,15 +28,22 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     private final Set<UUID> viewing = new HashSet<>();
     private final Map<UUID, Territory> announced = new HashMap<>();
     private final Map<UUID, BukkitTask> pending = new HashMap<>();
+    private final Map<String,Deletion> deletions=new HashMap<>();
+    private final java.util.function.LongSupplier deletionTime;
+    private record Deletion(UUID group,long expires,String fingerprint) {}
     private BukkitTask particles;
     private TerritoryExpansion expansion;
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss z").withZone(ZoneId.of("America/Sao_Paulo"));
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
     private static final Set<String> GROUP_ACTIONS=Set.of("criar","convidar","aceitar","recusar","info","lista","membros","cargo","lider","expulsar","sair","dissolver","grupos","desfazer");
-    private record Territory(Kind kind, UUID owner) {}
+    private record Territory(Kind kind, UUID owner,Chunk bonusChunk) {}
 
     public Commands(TerritorioPlugin plugin, Domain d, RaidService raids) {
+        this(plugin,d,raids,d::now);
+    }
+    Commands(TerritorioPlugin plugin,Domain d,RaidService raids,java.util.function.LongSupplier deletionTime) {
         this.plugin = plugin; this.d = d; this.raids = raids;
+        this.deletionTime=deletionTime;
         for (Player p : Bukkit.getOnlinePlayers()) {
             d.s.names.put(p.getUniqueId(), p.getName());
             announced.put(p.getUniqueId(), territory(p.getLocation()));
@@ -86,8 +93,11 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             switch (action) {
                 case "claim", "pessoal" -> {
                     require(p, "territorio.claim");
+                    if(action.equals("claim")&&args.length==2&&args[1].equalsIgnoreCase("bonus")) {
+                        d.claimBonus(who,chunk(p.getLocation()));tell(p,"§6Claim Bônus reivindicado para o grupo.");break;
+                    }
                     boolean personal = action.equals("pessoal") || (args.length > 1 && args[1].equalsIgnoreCase("pessoal"));
-                    if (args.length > (action.equals("pessoal") ? 1 : 2) || (args.length==2 && !personal)) throw error("Use /t claim [pessoal].");
+                    if (args.length > (action.equals("pessoal") ? 1 : 2) || (args.length==2 && !personal)) throw error("Use /t claim [pessoal|bonus].");
                     d.claim(who, chunk(p.getLocation()), personal);
                     tell(p, personal ? "§aChunk pessoal protegido." : "§aChunk protegido.");
                 }
@@ -159,7 +169,8 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
         if((act.equals("paz")&&a.length>2)||Set.of("aceitarpaz","recusarpaz").contains(act)) { need(a,3,"/t guerra "+act+" TAG"); peace(p,new String[]{"paz",act.equals("paz")?"propor":act.equals("aceitarpaz")?"aceitar":"recusar",join(a,2)}); return; }
         int targetAt=act.equals("declarar")?2:1;
         need(a,targetAt+1,"/t guerra declarar TAG"); Group target=targetGroup(join(a,targetAt)); Group origin=myGroup(p.getUniqueId());
-        d.declareWar(p.getUniqueId(),target.id,id->Bukkit.getPlayer(id)!=null);
+        War declared=d.declareWar(p.getUniqueId(),target.id,id->Bukkit.getPlayer(id)!=null);
+        plugin.discord().war(declared,origin,target,false);
         Bukkit.broadcast(LEGACY.deserialize("§c⚔ ["+origin.tag+"] declarou guerra a ["+target.tag+"]. Claims do atacante estão vulneráveis a todos."));
     }
     private void peace(Player p,String[] a) {
@@ -179,7 +190,8 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             need(a,targetAt+1,"/t paz TAG ou /t paz propor TAG");
             target=targetGroup(join(a,targetAt)); act="propor";
         }
-        d.peace(p.getUniqueId(),target.id,act);
+        War decided=d.peace(p.getUniqueId(),target.id,act);
+        if(act.equals("aceitar"))plugin.discord().war(decided,origin,target,true);
         if(act.equals("propor")) {
             notifyGroup(target.id,"§e["+origin.tag+"] propôs paz ao seu grupo. O líder pode usar /t paz aceitar "+origin.tag+" ou /t paz recusar "+origin.tag+".");
             notifyGroup(origin.id,"§eProposta de paz enviada a ["+target.tag+"].");
@@ -210,13 +222,19 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
 
     private void admin(CommandSender sender,String[] input) {
-        need(input,1,"/t admin inspecionar|nome|tag|lider|removerclaim|guerras|saques|reload|bypass|encerrarguerra");
+        need(input,1,"/t admin inspecionar|nome|tag|lider|removerclaim|guerras|saques|reload|bypass|encerrarguerra|deletar|discord");
         boolean force=input[input.length-1].equalsIgnoreCase("--forcar");
         String[] a=force?Arrays.copyOf(input,input.length-1):input;
         if(force) require(sender,"territorio.admin.force");
         if(a.length==0)throw error("Informe a operação administrativa antes de --forcar.");
         String op=lower(a[0]); String actor=sender instanceof Player p?p.getName()+"/"+p.getUniqueId():sender.getName();
         switch(op) {
+            case "deletar" -> {require(sender,"territorio.admin.deletar");deleteGroup(sender,a,actor);}
+            case "discord" -> {
+                require(sender,"territorio.admin.discord");
+                if(a.length!=2||!a[1].equalsIgnoreCase("teste"))throw error("Use /t admin discord teste.");
+                plugin.activity("ADMIN",actor+" solicitou teste DiscordSRV");plugin.discord().test(sender);
+            }
             case "inspecionar" -> {
                 require(sender,"territorio.admin.inspect");
                 if(a.length>1)groupInfo(sender,targetGroup(join(a,1))); else claimInfo(player(sender));
@@ -233,7 +251,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             }
             case "removerclaim" -> {
                 require(sender,"territorio.admin.unclaim"); Player p=player(sender); Chunk c=chunk(p.getLocation()); Claim claim=d.claim(c); if(claim==null)throw error("Este chunk não tem claim.");
-                if(claim.kind==Kind.GROUP)warGuard(d.s.groups.get(claim.owner),force);
+                if(Domain.collective(claim.kind))warGuard(d.s.groups.get(claim.owner),force);
                 String before=claim.kind+" "+claim.owner; d.adminUnclaim(c); plugin.audit(actor,"removerclaim"+(force?" FORÇA":""),c.toString(),before,"livre"); tell(sender,"§aClaim removido e registrado. Nenhum bloco foi alterado.");
             }
             case "guerras" -> { require(sender,"territorio.admin.wars"); history(sender,concat("guerras",Arrays.copyOfRange(a,1,a.length)),true); }
@@ -261,11 +279,47 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
         for(Member m:g.members.values().stream().sorted(Comparator.comparing((Member m)->m.role.ordinal()).thenComparing(m->name(m.player))).toList())tell(s,"§e"+name(m.player)+" §7— "+roleName(m.role));
     }
     private void claimInfo(Player p) {
-        require(p,"territorio.claim"); Claim c=d.claim(chunk(p.getLocation()));
-        tell(p,c==null?"§7Chunk atual: livre.":"§6Chunk atual: "+c.kind+" — "+ownerLabel(c));
-        tell(p,"§7Seus claims solo: "+d.count(Kind.SOLO,p.getUniqueId())+"/"+d.soloLimit+"; pessoal: "+d.count(Kind.PERSONAL,p.getUniqueId())+"/1.");
+        require(p,"territorio.claim"); Claim c=d.claim(chunk(p.getLocation()));Group g=d.group(p.getUniqueId());
+        if(g==null)tell(p,"§7Seus claims solo: "+d.count(Kind.SOLO,p.getUniqueId())+"/"+d.soloLimit+"; pessoal: "+d.count(Kind.PERSONAL,p.getUniqueId())+"/1.");
+        else {
+            tell(p,"§6[Território] Informações territoriais");tell(p,"§eGrupo: "+g.tag);
+            tell(p,"§fClaims normais: "+d.count(Kind.GROUP,g.id)+"/"+d.capacity(g));
+            tell(p,"§6Claims Bônus conquistados: "+g.bonusEarned+"/"+d.bonusCapacity(g));
+            tell(p,"§eClaims Bônus utilizados: "+d.count(Kind.BONUS,g.id)+"/"+g.bonusEarned);
+            tell(p,"§fClaims pessoais: "+d.count(Kind.PERSONAL,p.getUniqueId())+"/1");
+        }
+        tell(p,c==null?"§7Chunk atual: livre.":"§6Chunk atual: "+claimType(c)+" — "+ownerLabel(c));
         Set<UUID> trusted=d.s.trusted.getOrDefault(p.getUniqueId(),Set.of());
         if(!trusted.isEmpty())tell(p,"§7Pessoas de confiança: "+trusted.stream().map(this::name).sorted().collect(Collectors.joining(", ")));
+    }
+    private String claimType(Claim c) {return switch(c.kind){case SOLO->"Claim solo";case GROUP->"Claim normal coletivo";case PERSONAL->"Claim pessoal";case BONUS->"Claim Bônus";};}
+    private String executorKey(CommandSender sender) {return sender instanceof Player p?p.getUniqueId().toString():sender.getClass().getName()+":"+sender.getName();}
+    private String deletionFingerprint(Group g) {
+        return StateStore.JSON.toJson(g)+d.s.claims.entrySet().stream().filter(e->Domain.collective(e.getValue().kind)&&e.getValue().owner.equals(g.id))
+            .map(e->e.getKey()+":"+e.getValue().kind+":"+e.getValue().bonusOrder).sorted().toList();
+    }
+    private void deleteGroup(CommandSender sender,String[] args,String actor) {
+        need(args,2,"/t admin deletar TAG [confirmar]");
+        boolean confirm=args.length>=3&&args[args.length-1].equalsIgnoreCase("confirmar");
+        Group g=targetGroup(String.join(" ",Arrays.copyOfRange(args,1,confirm?args.length-1:args.length)));
+        String key=executorKey(sender);long now=deletionTime.getAsLong();
+        deletions.values().removeIf(value->value.expires<=now);
+        if(confirm) {
+            Deletion approval=deletions.remove(key);
+            if(approval==null||!approval.group.equals(g.id)||!approval.fingerprint.equals(deletionFingerprint(g)))
+                throw error("Confirmação ausente, expirada ou grupo alterado. Repita /t admin deletar "+g.tag+" e confira os dados.");
+            List<UUID> members=List.copyOf(g.members.keySet());String before=deletionFingerprint(g);
+            d.adminDelete(g.id,actor);plugin.audit(actor,"deletar",g.id.toString(),before,"grupo excluído; blocos preservados");
+            plugin.afterSaved(()->{
+                tell(sender,"§a[Território] Grupo ["+g.tag+"] excluído e alteração salva. Construções e claims pessoais preservados.");
+                for(UUID id:members)privateMessage(id,"§e[Território] Seu grupo ["+g.tag+"] foi excluído pela administração.");
+            });
+        } else {
+            deletions.put(key,new Deletion(g.id,now+60_000,deletionFingerprint(g)));
+            tell(sender,"§c[Território] ATENÇÃO! Você está prestes a excluir o grupo "+groupName(g.id)+".");
+            tell(sender,"§eMembros: "+g.members.size()+" | Claims normais: "+d.count(Kind.GROUP,g.id)+" | Claims Bônus: "+d.count(Kind.BONUS,g.id));
+            tell(sender,"§cConfirme em até 60 segundos: /t admin deletar "+g.tag+" confirmar");
+        }
     }
     private void history(CommandSender p,String[] a,boolean admin) {
         int pg=1; UUID group=null;
@@ -279,9 +333,13 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
 
     private void manual(Player p) {
-        p.openBook(Book.book(Component.text("Manual do Território"),Component.text("Território"),manualPages(d.soloLimit,d.contribution)));
+        p.openBook(Book.book(Component.text("Manual do Território"),Component.text("Território"),manualPages(d.soloLimit,d.contribution,plugin.options().perMember(),plugin.options().chance())));
     }
     static List<Component> manualPages(int soloLimit,int contribution) {
+        return manualPages(soloLimit,contribution,6,0.25);
+    }
+    static List<Component> manualPages(int soloLimit,int contribution,int bonusPerMember,double bookChance) {
+        String chance=java.math.BigDecimal.valueOf(bookChance).movePointRight(2).stripTrailingZeros().toPlainString();
         return List.of(
             pageText("Território\n\n1. Claims e proteção\n2. Grupos e cargos\n3. Guerras e paz\n4. Alianças\n5. Saques\n\n/t abre este manual.\nOs atalhos antigos continuam válidos."),
             pageText("1. Claims\n\n/t claim\nProtege o chunk atual.\n/t unclaim\nRemove a proteção.\n/t claims\nConsulta os terrenos.\n\nSolo: até "+soloLimit+" chunks.\n/verchunk mostra os cantos."),
@@ -290,11 +348,15 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             pageText("Creepers\n\nA explosão usa autoria confiável. Sem ela, os claims ficam protegidos."),
             pageText("TNT automática\n\nTNT sem autoria pode destruir claims, fora de guerra também. Isso inclui autoria perdida ao recarregar chunks. Sujeito às regras do servidor.\n\nEm saque ativo, explosões não destroem os claims da vítima."),
             pageText("Fogo natural\n\nQuem tem permissão pode acender fogo diretamente. Terceiros sem acesso não podem.\nFogo, lava e raios podem iniciar incêndios naturais e consumir blocos. Proteções extras continuam durante saques."),
+            pageText("Claims Bônus\n\n/t claim bonus\nSomente líder/colíder.\n/t claims consulta os saldos.\n\nCada membro dá capacidade para "+bonusPerMember+" bônus; entrar não dá saldo. Grupos começam em zero."),
+            pageText("Conquistar e perder\n\nPvP entre grupos: vencedor +1, derrotado -1. Saldo entre zero e capacidade. Sem cooldown.\n\nSem saldo para manter chunks, o bônus mais recente perde proteção. Blocos ficam."),
+            pageText("Mudança de membros\n\nSaída/expulsão reduz a capacidade. Bônus excedentes são perdidos. Chunks são liberados do mais recente ao mais antigo, com aviso privado.\n\nRetornar não recupera bônus."),
+            pageText("Livro de informações\n\nPvP válido: "+chance+"% de chance de livro com um claim do grupo da vítima.\n\nPilhagem não altera a chance. Sem cooldown. Pessoais excluídos por padrão. Livro negociável."),
             pageText("2. Criar grupo\n\n/t grupo criar TAG Nome\nTAG: 2 a 5 letras ou números. Nome e TAG são fixos para jogadores.\n\n/t grupo info [TAG]\n/t grupo lista [página]\n/t grupo membros [TAG]"),
             pageText("Entrar no grupo\n\n/t grupo convidar Jogador\nConvite dura 5 minutos.\n/t grupo aceitar\n/t grupo recusar\n\nAo entrar, claims solo passam ao coletivo, respeitando os limites."),
             pageText("Cargos\n\nLíder: gestão e diplomacia.\nColíder: gestão; só um.\nOficial: convida.\nMembro: usa coletivos.\n\n/t grupo cargo Jogador Cargo\nmembro, oficial, colider."),
             pageText("PvP do grupo\n\nMesmo grupo não causa PvP entre si, em qualquer local.\n\nAliados, jogadores de confiança, grupos diferentes e solo mantêm PvP normal."),
-            pageText("Saída e limites\n\n/t grupo sair\nEspera: 2h para entrar ou criar grupo.\n\n/t grupo expulsar Jogador\nExpulso não tem espera.\nExcesso bloqueia novas claims. Nenhum terreno ou bloco é apagado."),
+            pageText("Saída e limites\n\n/t grupo sair\nEspera: 2h para entrar ou criar grupo.\n\n/t grupo expulsar Jogador\nExpulso não tem espera.\nNormais em excesso bloqueiam novas claims. Blocos ficam."),
             pageText("Liderança\n\n/t grupo lider Jogador confirmar\nAo sair, sucede o colíder, oficial ou membro mais antigo.\n\n/t grupo dissolver confirmar\nLibera coletivos. Preserva pessoais e blocos."),
             pageText("3. Guerras\n\n/t guerra TAG\nDeclaração unilateral: não depende de aceitação.\n\nOs líderes dos dois grupos precisam estar online no início. Desconectar depois não encerra a guerra."),
             pageText("Territórios na guerra\n\nColetivos do atacante: abertos a todos.\nColetivos do defensor: abertos aos atacantes.\n\nSolo e pessoais seguem privados.\n\nTNT automática: vale a exceção."),
@@ -363,6 +425,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
     @EventHandler(priority=EventPriority.MONITOR)
     public void quit(PlayerQuitEvent e) {
+        deletions.remove(executorKey(e.getPlayer()));
         UUID id=e.getPlayer().getUniqueId(); if(plugin.bypassing(id))plugin.toggleBypass(id); viewing.remove(id); announced.remove(id); BukkitTask task=pending.remove(id);if(task!=null)task.cancel();
         if(viewing.isEmpty())stopParticles();
     }
@@ -373,13 +436,27 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             pending.remove(id); if(!p.isOnline())return; Territory current=territory(p.getLocation()),last=announced.get(id);
             if(Objects.equals(current,last))return;
             if(last!=null)tell(p,"§c< §fVocê saiu do território "+territoryLabel(last)+"§f.");
-            if(current!=null)tell(p,"§a> §fVocê entrou no território "+territoryLabel(current)+"§f.");
+            if(current!=null) {
+                if(current.kind==Kind.BONUS)bonusNotice(p,current);
+                else tell(p,"§a> §fVocê entrou no território "+territoryLabel(current)+"§f.");
+            }
             if(current==null)announced.remove(id);else announced.put(id,current);
         },delay));
     }
-    private Territory territory(Location l){ Claim c=d.claim(chunk(l)); return c==null?null:new Territory(c.kind,c.owner); }
-    private String territoryLabel(Territory t){ return t.kind==Kind.GROUP?"do grupo §6"+groupName(t.owner):"de §6"+name(t.owner); }
-    private String ownerLabel(Claim c){return c.kind==Kind.GROUP?groupName(c.owner):name(c.owner);}
+    private Territory territory(Location l){ Claim c=d.claim(chunk(l)); return c==null?null:new Territory(c.kind,c.owner,c.kind==Kind.BONUS?chunk(l):null); }
+    private String territoryLabel(Territory t){ return Domain.collective(t.kind)?"do grupo §6"+groupName(t.owner):"de §6"+name(t.owner); }
+    private String ownerLabel(Claim c){return Domain.collective(c.kind)?groupName(c.owner):name(c.owner);}
+    private void bonusNotice(Player p,Territory territory) {
+        Group group=d.group(p.getUniqueId());
+        if(group==null||!group.id.equals(territory.owner)) {tell(p,"§eVocê entrou em um Claim Bônus do grupo §6"+groupName(territory.owner)+".");return;}
+        var claims=d.bonusClaims(group.id);int position=-1;
+        for(int i=0;i<claims.size();i++)if(claims.get(i).getKey().equals(territory.bonusChunk)){position=i;break;}
+        tell(p,"§eVocê entrou em um Claim Bônus do seu grupo.");
+        if(position==claims.size()-1) {
+            tell(p,"§6Este é o Claim Bônus mais recente ("+(position+1)+"º de "+claims.size()+").");
+            tell(p,"§cSerá o primeiro removido se o grupo perder território.");
+        } else tell(p,"§6Posição cronológica: "+(position+1)+"º de "+claims.size()+" Claims Bônus.");
+    }
     private String groupName(UUID id){Group g=d.s.groups.get(id);return g==null?"[grupo removido "+id.toString().substring(0,8)+"]":"["+g.tag+"] "+g.name;}
     private Group myGroup(UUID id){Group g=d.group(id);if(g==null)throw error("Você não pertence a um grupo.");return g;}
     private Group targetGroup(String input){Group g=d.groupByName(input);if(g==null)throw error("Grupo não encontrado. Use o nome completo ou a TAG.");return g;}
@@ -440,6 +517,18 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
             if(hasAdmin(sender))options.add("admin");
             if(grouped)options.removeIf(option->!GROUP_ACTIONS.contains(option));
         } else if(a[0].equalsIgnoreCase("admin")) {
+            if(a.length==2){if(sender.hasPermission("territorio.admin.deletar"))options.add("deletar");if(sender.hasPermission("territorio.admin.discord"))options.add("discord");}
+            if(a.length>=3&&a[1].equalsIgnoreCase("deletar")) {
+                if(sender.hasPermission("territorio.admin.deletar")) {
+                    if(a.length==3)options.addAll(groupTags());
+                    else if(a.length==4&&deletions.containsKey(executorKey(sender)))options.add("confirmar");
+                }
+                return matching(options,a[a.length-1]);
+            }
+            if(a.length>=3&&a[1].equalsIgnoreCase("discord")) {
+                if(a.length==3&&sender.hasPermission("territorio.admin.discord"))options.add("teste");
+                return matching(options,a[a.length-1]);
+            }
             Map<String,String> nodes=Map.of("inspecionar","inspect","nome","rename","tag","rename","lider","leader","removerclaim","unclaim","guerras","wars","saques","raids","reload","reload","bypass","bypass","encerrarguerra","force");
             if(a.length==2)nodes.forEach((command,node)->{if(sender.hasPermission("territorio.admin."+node))options.add(command);});
             else if(a.length==3&&nodes.containsKey(lower(a[1]))&&sender.hasPermission("territorio.admin."+nodes.get(lower(a[1])))&&Set.of("inspecionar","nome","tag","lider","encerrarguerra").contains(lower(a[1])))options.addAll(groupTags());
@@ -449,7 +538,7 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
         } else if(sender instanceof Player p) {
             Group g=d.group(p.getUniqueId());String action=lower(a[0]);
             if(a.length==2)switch(action){
-                case "claim"->{if(sender.hasPermission("territorio.claim")&&g!=null)options.add("pessoal");}
+                case "claim"->{if(sender.hasPermission("territorio.claim")&&g!=null){options.add("pessoal");if(d.bonusEnabled&&d.mayManage(p.getUniqueId()))options.add("bonus");}}
                 case "info","membros","guerras"->options.addAll(groupTags());
                 case "convidar"->{if(g!=null&&sender.hasPermission("territorio.grupo")&&g.members.get(p.getUniqueId()).role!=Role.MEMBER)Bukkit.getOnlinePlayers().stream().filter(q->d.group(q.getUniqueId())==null).forEach(q->options.add(q.getName()));}
                 case "confiar","desconfiar"->{if(sender.hasPermission("territorio.claim"))Bukkit.getOnlinePlayers().forEach(q->options.add(q.getName()));}
@@ -474,6 +563,6 @@ public final class Commands implements CommandExecutor, TabCompleter, Listener, 
     }
     private List<String> groupTags(){return d.s.groups.values().stream().map(g->g.tag).sorted().toList();}
     private static List<String> matching(Collection<String> candidates,String prefix){return candidates.stream().filter(s->lower(s).startsWith(lower(prefix))).distinct().sorted().toList();}
-    private static boolean hasAdmin(CommandSender s){return List.of("inspect","rename","leader","unclaim","wars","raids","reload","bypass","force").stream().anyMatch(n->s.hasPermission("territorio.admin."+n));}
-    @Override public void close(){stopParticles();pending.values().forEach(BukkitTask::cancel);pending.clear();viewing.clear();announced.clear();if(expansion!=null)expansion.unregister();}
+    private static boolean hasAdmin(CommandSender s){return List.of("inspect","rename","leader","unclaim","wars","raids","reload","bypass","force","deletar","discord").stream().anyMatch(n->s.hasPermission("territorio.admin."+n));}
+    @Override public void close(){stopParticles();pending.values().forEach(BukkitTask::cancel);pending.clear();deletions.clear();viewing.clear();announced.clear();if(expansion!=null)expansion.unregister();}
 }

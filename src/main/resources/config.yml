@@ -1,4 +1,4 @@
-# Não apaga nem migra automaticamente dados de versões antigas.
+# Preserva os dados; esquema 2 é migrado com backup pre-v3, sem converter claims antigos.
 claims:
   solo-limit: 9
   group-per-member: 9
@@ -18,3 +18,24 @@ visual:
   particle: HAPPY_VILLAGER
   interval-ticks: 20
   particles-per-corner: 2
+
+claim-bonus:
+  enabled: true
+  max-per-member: 6
+  pvp:
+    enabled: true
+intel-book:
+  enabled: true
+  drop-chance: 0.25
+  include-normal-claims: true
+  include-bonus-claims: true
+  include-personal-claims: false
+discordsrv:
+  enabled: true
+  announce-war: true
+  announce-peace: true
+  # Vazio usa o canal principal de chat já mapeado pelo DiscordSRV.
+  channel: ""
+logs:
+  # Somente logs/territorio-AAAA-MM-DD.log antigos entram nesta retenção.
+  retention-days: 30

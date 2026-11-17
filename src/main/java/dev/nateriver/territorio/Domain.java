@@ -7,7 +7,8 @@ import java.util.function.*;
 /** Main-thread domain model. No Bukkit objects or IO in rule evaluation. */
 public final class Domain {
     public enum Role { LEADER, COLEADER, OFFICER, MEMBER }
-    public enum Kind { SOLO, GROUP, PERSONAL }
+    public enum Kind { SOLO, GROUP, PERSONAL, BONUS }
+    public static boolean collective(Kind kind) {return kind==Kind.GROUP||kind==Kind.BONUS;}
     public enum Access { BUILD, CONTAINERS, MECHANISMS }
     public record Chunk(UUID world, int x, int z) {}
     public static final class Member {
@@ -18,9 +19,12 @@ public final class Domain {
         public UUID id,leader; public String name,tag;
         public Map<UUID,Member> members=new LinkedHashMap<>();
         public Map<UUID,EnumSet<Access>> allies=new LinkedHashMap<>();
+        public int bonusEarned;
+        public long bonusSequence;
     }
     public static final class Claim {
         public Kind kind; public UUID owner, contributor;
+        public long bonusOrder;
         public Claim(Kind k,UUID o) {kind=k;owner=o;contributor=k==Kind.GROUP?null:o;}
     }
     public static final class War {
@@ -38,7 +42,8 @@ public final class Domain {
         public AllianceInvite(UUID f,UUID t,long e) {from=f;to=t;expires=e;}
     }
     public static final class State {
-        public int schemaVersion=2;
+        public int schemaVersion=3;
+        public int bonusMaxPerMember=6;
         public Map<UUID,Group> groups=new LinkedHashMap<>();
         public Map<Chunk,Claim> claims=new LinkedHashMap<>();
         public Map<UUID,Long> joinCooldown=new HashMap<>(),victimCooldown=new HashMap<>(),raiderCooldown=new HashMap<>();
@@ -52,6 +57,9 @@ public final class Domain {
     public int contribution=9,soloLimit=9,nameMin=3,nameMax=32;
     public Runnable onChange=()->{};
     public Predicate<UUID> activeVictim=id->false;
+    public boolean bonusEnabled=true,bonusPvpEnabled=true;
+    public record Change(String category,String message,Chunk lost,UUID group,List<UUID> recipients) {}
+    public Consumer<Change> onEvent=event->{};
     private final LongSupplier clock;
     private final Map<UUID,Group> membership=new HashMap<>();
     private final Map<UUID,List<War>> activeWars=new HashMap<>();
@@ -70,9 +78,9 @@ public final class Domain {
     public boolean isLeader(UUID p) {Group g=group(p);return g!=null&&g.leader.equals(p);}
     public boolean mayManage(UUID p) {Group g=group(p);return g!=null&&(g.members.get(p).role==Role.LEADER||g.members.get(p).role==Role.COLEADER);}
     /** A contribution remains committed until its land is released, even after leaving. */
-    public long committedElsewhere(UUID player,UUID groupId) {return s.claims.values().stream().filter(c->c.kind!=Kind.PERSONAL&&player.equals(c.contributor)&&!(c.kind==Kind.GROUP&&c.owner.equals(groupId))).count();}
+    public long committedElsewhere(UUID player,UUID groupId) {return s.claims.values().stream().filter(c->(c.kind==Kind.GROUP||c.kind==Kind.SOLO)&&player.equals(c.contributor)&&!(c.kind==Kind.GROUP&&c.owner.equals(groupId))).count();}
     public long capacity(Group g) {return g.members.keySet().stream().mapToLong(p->Math.max(0,contribution-committedElsewhere(p,g.id))).sum();}
-    private long committed(UUID player) {return s.claims.values().stream().filter(c->c.kind!=Kind.PERSONAL&&player.equals(c.contributor)).count();}
+    private long committed(UUID player) {return s.claims.values().stream().filter(c->(c.kind==Kind.GROUP||c.kind==Kind.SOLO)&&player.equals(c.contributor)).count();}
     public long count(Kind k,UUID owner) {return s.claims.values().stream().filter(c->c.kind==k&&c.owner.equals(owner)).count();}
     public boolean inWar(UUID g) {return !activeWars.getOrDefault(g,List.of()).isEmpty();}
     private void require(boolean ok,String error) {if(!ok)throw new IllegalArgumentException(error);}
@@ -92,7 +100,7 @@ public final class Domain {
         mayJoin(player);validateLabels(null,name,tag);require(count(Kind.SOLO,player)<=contribution,"Seus claims solo ultrapassam a contribuição coletiva configurada.");
         Group g=new Group();g.id=UUID.randomUUID();g.name=name;g.tag=tag.toUpperCase(Locale.ROOT);g.leader=player;
         g.members.put(player,new Member(player,Role.LEADER,now()));s.groups.put(g.id,g);
-        migrate(player,g);changed();return g;
+        migrate(player,g);changed();event("GROUP",identity(player)+" criou "+label(g),g,null);return g;
     }
     private void migrate(UUID p,Group g) {s.claims.values().forEach(c->{if(c.kind==Kind.SOLO&&c.owner.equals(p)){c.kind=Kind.GROUP;c.owner=g.id;}});}
     public void claim(UUID p,Chunk at,boolean personal) {
@@ -105,9 +113,10 @@ public final class Domain {
     }
     public void unclaim(UUID p,Chunk at) {
         Claim c=claim(at);require(c!=null,"Chunk sem proteção.");
-        if(c.kind==Kind.GROUP) {Group g=needGroup(p);require(g.id.equals(c.owner)&&mayManage(p),"Sem permissão para remover este claim.");noWar(g);}
+        if(collective(c.kind)) {Group g=needGroup(p);require(g.id.equals(c.owner)&&mayManage(p),"Sem permissão para remover este claim.");noWar(g);}
         else {require(c.owner.equals(p),"Este claim não é seu.");require(!activeVictim.test(p),"Não é possível remover claims durante o saque.");}
         s.claims.remove(at);changed();
+        if(c.kind==Kind.BONUS)event("CLAIM",identity(p)+" liberou Claim Bônus de "+label(s.groups.get(c.owner)),s.groups.get(c.owner),at);
     }
     public void invite(UUID actor,UUID target) {
         Group g=needGroup(actor);require(g.members.get(actor).role!=Role.MEMBER,"Seu cargo não pode convidar.");require(group(target)==null,"Jogador já pertence a um grupo.");require(s.joinCooldown.getOrDefault(target,0L)<=now(),"Jogador em cooldown de saída.");s.invites.put(target,new Invite(g.id,now()+300_000));changed();
@@ -118,20 +127,24 @@ public final class Domain {
         require(!inWar(g.id),"Não é possível entrar em um grupo durante uma guerra.");
         long outside=s.claims.values().stream().filter(c->c.kind==Kind.GROUP&&!c.owner.equals(g.id)&&p.equals(c.contributor)).count();
         require(count(Kind.SOLO,p)+outside<=contribution,"Os claims importados ultrapassam sua contribuição; parte dela está comprometida em outro grupo.");
-        g.members.put(p,new Member(p,Role.MEMBER,now()));migrate(p,g);s.invites.remove(p);changed();
+        g.members.put(p,new Member(p,Role.MEMBER,now()));migrate(p,g);s.invites.remove(p);changed();event("GROUP",identity(p)+" entrou em "+label(g),g,null);
     }
     public void refuse(UUID p) {require(s.invites.remove(p)!=null,"Nenhum convite pendente.");changed();}
     public void leave(UUID p) {
         Group g=needGroup(p);noWar(g);g.members.remove(p);s.joinCooldown.put(p,now()+7_200_000);
-        if(g.members.isEmpty())removeGroup(g);else if(g.leader.equals(p))succeed(g);
-        changed();
+        List<Change> losses=trimBonus(g,"saída de integrante");
+        boolean deleted=g.members.isEmpty();
+        if(deleted)removeGroup(g);else if(g.leader.equals(p))succeed(g);
+        changed();losses.forEach(onEvent);event("GROUP",identity(p)+" saiu de "+label(g),g,null);
+        if(deleted)event("GROUP","Grupo excluído após saída do último integrante: "+label(g),g,null);
     }
     private void succeed(Group g) {
         Member next=g.members.values().stream().min(Comparator.comparingInt((Member m)->m.role.ordinal()).thenComparingLong(m->m.role==Role.MEMBER?m.joined:m.ranked).thenComparing(m->m.player.toString())).orElseThrow();
         next.role=Role.LEADER;next.ranked=now();g.leader=next.player;
     }
     public void kick(UUID actor,UUID target) {
-        Group g=needGroup(actor);noWar(g);require(mayManage(actor),"Seu cargo não pode expulsar.");Member m=g.members.get(target);require(m!=null&&!actor.equals(target),"Membro inválido.");require(m.role==Role.MEMBER,"Rebaixe o cargo superior antes de expulsar.");g.members.remove(target);changed();
+        Group g=needGroup(actor);noWar(g);require(mayManage(actor),"Seu cargo não pode expulsar.");Member m=g.members.get(target);require(m!=null&&!actor.equals(target),"Membro inválido.");require(m.role==Role.MEMBER,"Rebaixe o cargo superior antes de expulsar.");g.members.remove(target);
+        List<Change> losses=trimBonus(g,"expulsão de integrante");changed();losses.forEach(onEvent);event("GROUP",identity(actor)+" expulsou "+identity(target)+" de "+label(g),g,null);
     }
     public void rank(UUID actor,UUID target,Role role) {
         Group g=needGroup(actor);Member t=g.members.get(target);require(t!=null&&!actor.equals(target),"Membro inválido.");require(mayManage(actor),"Seu cargo não administra cargos.");
@@ -144,15 +157,15 @@ public final class Domain {
         require(role!=Role.COLEADER||g.members.values().stream().noneMatch(m->m.role==Role.COLEADER&&!m.player.equals(target)),"O grupo já tem colíder.");
         t.role=role;t.ranked=now();changed();
     }
-    public void dissolve(UUID actor) {Group g=leader(actor);noWar(g);removeGroup(g);changed();}
+    public void dissolve(UUID actor) {Group g=leader(actor);noWar(g);removeGroup(g);changed();event("GROUP",identity(actor)+" dissolveu "+label(g),g,null);}
     private void removeGroup(Group g) {
-        s.claims.entrySet().removeIf(e->e.getValue().kind==Kind.GROUP&&e.getValue().owner.equals(g.id));s.groups.remove(g.id);
+        s.claims.entrySet().removeIf(e->collective(e.getValue().kind)&&e.getValue().owner.equals(g.id));s.groups.remove(g.id);
         s.groups.values().forEach(other->other.allies.remove(g.id));s.invites.entrySet().removeIf(e->e.getValue().group.equals(g.id));s.allianceInvites.entrySet().removeIf(e->e.getValue().from.equals(g.id)||e.getValue().to.equals(g.id));
     }
     public void trust(UUID owner,UUID player,boolean allow) {require(!owner.equals(player),"O dono já possui acesso.");Set<UUID> t=s.trusted.computeIfAbsent(owner,k->new HashSet<>());if(allow)t.add(player);else t.remove(player);changed();}
     public boolean canAccess(UUID p,Claim c,Access access) {
         if(c==null)return true;
-        if(c.kind!=Kind.GROUP)return c.owner.equals(p)||s.trusted.getOrDefault(c.owner,Set.of()).contains(p);
+        if(!collective(c.kind))return c.owner.equals(p)||s.trusted.getOrDefault(c.owner,Set.of()).contains(p);
         Group owner=s.groups.get(c.owner);if(owner==null)return false;Group visitor=group(p);if(owner==visitor)return true;
         for(War w:activeWars.getOrDefault(owner.id,List.of())) {
             if(w.attacker.equals(owner.id))return true; // Declaring side vulnerable to everybody.
@@ -190,5 +203,63 @@ public final class Domain {
     public void allyPermission(UUID actor,UUID other,Access access,boolean enabled) {Group g=leader(actor);require(g.allies.containsKey(other)&&!enemies(g.id,other),"Aliança inexistente ou suspensa.");if(enabled)g.allies.get(other).add(access);else g.allies.get(other).remove(access);changed();}
     public void adminRename(UUID id,String name,String tag) {Group g=s.groups.get(id);require(g!=null,"Grupo inexistente.");validateLabels(id,name,tag);g.name=name;g.tag=tag.toUpperCase(Locale.ROOT);changed();}
     public void adminLeader(UUID id,UUID player) {Group g=s.groups.get(id);require(g!=null&&g.members.containsKey(player),"O novo líder deve pertencer ao grupo.");g.members.get(g.leader).role=Role.MEMBER;g.members.get(g.leader).ranked=now();g.members.get(player).role=Role.LEADER;g.members.get(player).ranked=now();g.leader=player;changed();}
-    public void adminUnclaim(Chunk c) {require(s.claims.remove(c)!=null,"Chunk não protegido.");changed();}
+    public void adminUnclaim(Chunk c) {Claim old=s.claims.remove(c);require(old!=null,"Chunk não protegido.");changed();if(old.kind==Kind.BONUS)event("CLAIM","Claim Bônus removido pela administração de "+label(s.groups.get(old.owner)),s.groups.get(old.owner),c);}
+
+    public long bonusCapacity(Group g) {return Math.min(Integer.MAX_VALUE,(long)g.members.size()*s.bonusMaxPerMember);}
+    public List<Map.Entry<Chunk,Claim>> bonusClaims(UUID group) {
+        return s.claims.entrySet().stream().filter(e->e.getValue().kind==Kind.BONUS&&e.getValue().owner.equals(group))
+                .sorted(Comparator.comparingLong(e->e.getValue().bonusOrder)).toList();
+    }
+    public void claimBonus(UUID actor,Chunk at) {
+        require(bonusEnabled,"Claims Bônus estão desativados.");
+        Group g=needGroup(actor);require(mayManage(actor),"Somente líder ou colíder administra claims coletivos.");noWar(g);
+        require(!s.claims.containsKey(at),"Este chunk já está protegido.");
+        require(count(Kind.BONUS,g.id)<g.bonusEarned,"Seu grupo não possui Claims Bônus conquistados disponíveis.");
+        require(g.bonusSequence<Long.MAX_VALUE,"A sequência de Claims Bônus atingiu o limite; consulte a administração.");
+        Claim c=new Claim(Kind.BONUS,g.id);c.contributor=actor;c.bonusOrder=++g.bonusSequence;s.claims.put(at,c);changed();
+        event("CLAIM",identity(actor)+" reivindicou Claim Bônus #"+c.bonusOrder+" de "+label(g),g,at);
+    }
+    /** Two independent balance changes, one snapshot. Normal/personal claims are never trimmed. */
+    public void pvpKill(UUID killer,UUID victim) {
+        Group winner=group(killer),loser=group(victim);
+        if(winner==null||loser==null||winner.id.equals(loser.id))return;
+        int beforeWin=winner.bonusEarned,beforeLoss=loser.bonusEarned;
+        List<Change> losses=List.of();
+        if(bonusEnabled&&bonusPvpEnabled) {
+            if(winner.bonusEarned<bonusCapacity(winner))winner.bonusEarned++;
+            loser.bonusEarned=Math.max(0,loser.bonusEarned-1);
+            losses=trimBonus(loser,"morte de integrante no PvP");changed();
+        }
+        event("PVP",identity(killer)+" "+label(winner)+" matou "+identity(victim)+" "+label(loser),winner,null);
+        event("BONUS",label(winner)+": "+beforeWin+" -> "+winner.bonusEarned+" | "+label(loser)+": "+beforeLoss+" -> "+loser.bonusEarned
+                +((bonusEnabled&&bonusPvpEnabled)?" (limites máximo/mínimo respeitados)":" (ganhos/perdas suspensos)"),loser,null);
+        losses.forEach(onEvent);
+    }
+    private List<Change> trimBonus(Group g,String reason) {
+        int previous=g.bonusEarned;g.bonusEarned=(int)Math.min(g.bonusEarned,bonusCapacity(g));
+        List<Map.Entry<Chunk,Claim>> claimed=bonusClaims(g.id);List<Change> changes=new ArrayList<>();
+        for(int i=claimed.size()-1;i>=g.bonusEarned;i--) {
+            Chunk at=claimed.get(i).getKey();s.claims.remove(at);
+            changes.add(new Change("BONUS_LOSS",reason+" | "+label(g),at,g.id,List.copyOf(g.members.keySet())));
+        }
+        if(previous!=g.bonusEarned)changes.add(new Change("BONUS","Ajuste por "+reason+": "+label(g)+" "+previous+" -> "+g.bonusEarned,null,g.id,List.of()));
+        return changes;
+    }
+    public void adminDelete(UUID group,String executor) {
+        Group g=s.groups.get(group);require(g!=null,"Grupo inexistente.");
+        for(War war:s.wars)if(war.attacker.equals(group)||war.defender.equals(group)) {
+            if(war.ended==0){war.ended=now();war.result="GRUPO_EXCLUIDO_PELA_ADMINISTRACAO";}
+            war.peaceFrom=null;
+        }
+        List<Chunk> bonus=bonusClaims(group).stream().map(Map.Entry::getKey).toList();
+        List<UUID> members=List.copyOf(g.members.keySet());
+        removeGroup(g);changed();
+        for(Chunk at:bonus)onEvent.accept(new Change("BONUS_LOSS","exclusão administrativa | "+executor+" | "+label(g),at,group,members));
+        event("GROUP",executor+" excluiu "+label(g)+" | integrantes="+members,g,null);
+    }
+    private String identity(UUID player) {return s.names.getOrDefault(player,"jogador")+"/"+player;}
+    private String label(Group g) {return "["+g.tag+"] "+g.name+"/"+g.id;}
+    private void event(String category,String message,Group g,Chunk chunk) {
+        onEvent.accept(new Change(category,message,chunk,g.id,List.of()));
+    }
 }

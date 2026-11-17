@@ -1,4 +1,12 @@
-# Instalação e atualização — Território 2.0
+# Instalação e atualização — Território 2.1.0
+
+## Atualização de produção 2.0.x → 2.1.0
+
+**Preserve o `state.json` atual e homologue primeiro uma cópia da produção.** Há migração validada de esquema 2 para 3 com `state.json.pre-v3.bak`, sem reset, conversão de claims ou bônus retroativos. Configurações antigas recebem padrões em memória, sem sobrescrever seu arquivo.
+
+Siga [o procedimento completo de backup, homologação e recuperação](ATUALIZACAO-2.1.0.md#migração-backup-e-recuperação) e o [roteiro 2.1.0](TESTES-MANUAIS-2.1.0.md). O rollback exige JAR e dados do mesmo backup; a versão antiga não lê esquema 3. Nenhuma instalação é executada por esta entrega.
+
+As seções abaixo registram a instalação original **2.0** e a atualização histórica **2.0.0→2.0.1**. A decisão antiga sobre `data.yml` 0.1.2 não se aplica aos dados ativos em `state.json`; não siga instruções de iniciar um estado novo ao atualizar a produção.
 
 ## Atualização do beta 2.0.0 para 2.0.1
 

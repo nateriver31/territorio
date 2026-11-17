@@ -6,7 +6,7 @@
 
 ```text
 /t
-├─ claim [pessoal]
+├─ claim [pessoal|bonus]
 ├─ unclaim
 ├─ claims
 ├─ confiar Jogador
@@ -33,7 +33,10 @@
 ├─ aliados [lista]
 ├─ aliados propor|aceitar|recusar|remover TAG
 ├─ aliados permissao TAG portas|recipientes|construcao sim|nao
-└─ admin … (funções e permissões preservadas)
+└─ admin
+   ├─ deletar TAG [confirmar]
+   ├─ discord teste
+   └─ … (demais funções e permissões preservadas)
 
 /verchunk
 /roubar
@@ -47,8 +50,9 @@
 | `/t`, `/t ajuda`, `/t help` | Abre o manual em livro, sem entregar item permanente |
 | `/t claim` | Reivindica chunk solo ou coletivo |
 | `/t claim pessoal`, `/t pessoal` | Protege o único chunk extra pessoal do integrante |
+| `/t claim bonus` | Reivindica um bônus conquistado do grupo; líder/colíder, fora de guerra |
 | `/t unclaim`, `/t desclaim` | Remove proteção própria autorizada; não remove blocos |
-| `/t claims` | Consulta terreno atual e claims pessoais/solo |
+| `/t claims` | Grupo: normais/limite, bônus conquistados/capacidade, utilizados/saldo e pessoal; solo: informações anteriores; mostra tipo/dono atual |
 | `/t confiar Jogador`, `/t desconfiar Jogador` | Concede/revoga acesso às claims individuais do dono; não concede administração |
 | `/t grupo criar ROMA Império Romano` | Cria grupo com TAG e nome; identidade é fixa para jogadores |
 | `/t grupo info [TAG ou nome completo]` | Consulta o grupo informado ou seu próprio grupo |
@@ -112,6 +116,8 @@ No saque, dono e invasor podem usar botões, alavancas e placas de pressão. O s
 | `/t admin reload`, `/t reload` | `territorio.admin.reload` |
 | `/t admin bypass` | `territorio.admin.bypass` |
 | `/t admin encerrarguerra TAG1 TAG2` | `territorio.admin.wars` **e** `territorio.admin.force` |
+| `/t admin deletar TAG [confirmar]` | `territorio.admin.deletar`; console suportado; confirmação própria por 60s e revalidação |
+| `/t admin discord teste` | `territorio.admin.discord`; console suportado; sucesso só depois do ack do Discord |
 
 Correções de nome/TAG/liderança e remoção de claims coletivos são bloqueadas na guerra. A intervenção excepcional usa o argumento final `--forcar` e requer **também** `territorio.admin.force`. O administrador e os valores anteriores/novos são registrados em `audit.jsonl`. A consulta de saques é privada da staff e revela invasor, vítima, horários, blocos e resultado.
 
@@ -130,3 +136,9 @@ lp group administrador permission set territorio.admin.reload true
 ```
 
 Escolha cada autorização; não é necessário um wildcard. O livro comum não lista administração. Os comandos globais `/help` e `/ajuda` não são registrados pelo Território.
+
+## Notas da 2.1.0
+
+Claims Bônus seguem as permissões coletivas, inclusive guerras e alianças explícitas. Saldos não alteram os limites normais/pessoais. `/t unclaim` libera um bônus sem consumir o saldo conquistado. As perdas automáticas atingem apenas bônus excedentes, do mais recente ao mais antigo; saída/expulsão continua recalculando a capacidade mesmo com a geração de bônus suspensa.
+
+A exclusão administrativa é explícita, independe de dissolução pelo líder e encerra guerras relacionadas; preserva histórico, claims pessoais, construções e progresso. Não é executada na atualização. Recarga inválida mantém toda a configuração anterior; redução de capacidade que retiraria bônus é recusada. Veja [as regras completas](ATUALIZACAO-2.1.0.md).

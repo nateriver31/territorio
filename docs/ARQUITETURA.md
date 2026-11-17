@@ -8,6 +8,10 @@
 - `ProtectionListener`: autorização por ação e eventos Bukkit/Paper, incluindo inventários já abertos e automação de fronteira. Bloqueia dano atribuível entre jogadores do mesmo grupo, preservando a política externa para os demais jogadores.
 - `Commands` e `TerritoryExpansion`: comandos, livro, partículas, avisos com debounce e placeholders; o cache da expansão é imutável para consultas assíncronas do TAB.
 - `QuarantineListener`: bloqueia interações/alterações se houver falha de dados ou persistência; não desliga o servidor nem apaga dados. Pare o servidor e corrija/restaure o armazenamento antes de liberá-lo.
+- `ProgressListener`: deduplica mortes válidas, usa autoria `DamageSource` e processa bônus/livro; sem alterações em PvPManager ou Combat Log.
+- `UpdateOptions`: valida novas opções e impacto de capacidade antes de aplicar uma recarga.
+- `ActivityLog`: executor separado e fila limitada para logs diários e sua retenção; falha no log diário não invalida os dados territoriais.
+- `DiscordAnnouncements`: adaptador público opcional para DiscordSRV 1.30.5/JDA, com envio por callback depois do checkpoint e sem replay de eventos antigos.
 
 Toda mutação e todo acesso Bukkit ocorrem na thread do servidor. O escritor assíncrono recebe apenas bytes/strings; não consulta jogadores ou blocos. No desligamento normal, os saques encerram e as gravações são drenadas. Ao voltar, registros incompletos tornam-se `REINICIO`, sem reconstruir permissões de saque.
 
@@ -19,7 +23,7 @@ Ao entrar/criar grupo, os claims solo migram para o coletivo com o mesmo contrib
 
 Quando alguém sai ou é expulso:
 
-1. A capacidade do grupo é recalculada. Claims existentes permanecem, sem apagar blocos.
+1. A capacidade normal do grupo é recalculada. Claims **normais** existentes permanecem, sem apagar blocos.
 2. Se o grupo exceder a capacidade, fica impedido de expandir até regularizar.
 3. A contribuição que ainda sustenta claims nesse grupo não pode ser reutilizada pelo ex-membro como solo ou em outro grupo.
 4. Cada claim liberado devolve uma unidade dessa contribuição. Dissolver o grupo libera todas as contribuições coletivas. A dissolução não transfere terrenos a ex-membros.
@@ -27,6 +31,8 @@ Quando alguém sai ou é expulso:
 Exemplo: A e B sustentam 18 claims. B sai e seus nove claims respaldados continuam no grupo de A. B pode criar outro grupo após seu cooldown, mas esses nove créditos continuam ocupados. A pode liberar claims ou novos integrantes com créditos disponíveis podem regularizar a capacidade. B não tem poder de retirar claims de A. Esta regra fecha a multiplicação de terras por expulsão/entrada, sem remoção arbitrária.
 
 Por padrão, o solo tem nove créditos e cada integrante oferece nove; os valores são configuráveis. O chunk extra pessoal é único por UUID, continua privado ao sair/dissolver e não é renovado a cada troca de grupo. Para movê-lo, o dono remove a proteção anterior e reivindica outro enquanto integrante de grupo. Os blocos nunca são movidos ou apagados.
+
+Claims Bônus usam outra capacidade (padrão seis por integrante), saldo conquistado e ordem monotônica persistida. Não comprometem contribuições normais. A redução de saldo/capacidade remove proteção somente de bônus excedentes em LIFO. A saída ou expulsão perde excedentes definitivamente; a volta não restaura. A migração esquema 2→3 começa os grupos existentes em zero e preserva os campos antigos. Consulte [a estratégia e recuperação](ATUALIZACAO-2.1.0.md#migração-backup-e-recuperação).
 
 ## Guerra
 
