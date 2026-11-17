@@ -1,0 +1,40 @@
+Território 2.1.0 — validação executada em 17/11/2026
+
+Base: main 18aae4c8f26ecc36a42017bcc91b9116330301b5
+JDK: Eclipse Temurin 25.0.5+8
+Maven: 3.9.11
+Paper API: 26.2.build.135-stable
+MockBukkit: 4.117.0
+
+Comando do projeto: mvn clean verify
+Neste ambiente: Maven offline com cache e settings externos de proxy.
+BUILD SUCCESS — 167 testes; 0 falhas; 0 erros; 0 ignorados.
+101 regressões anteriores preservadas e 66 testes acrescentados.
+
+ActivityLogTest: 4 testes, 0 falhas, 0 erros, 0 ignorados
+BonusDomainTest: 14 testes, 0 falhas, 0 erros, 0 ignorados
+BonusPersistenceTest: 9 testes, 0 falhas, 0 erros, 0 ignorados
+CommandsTest: 11 testes, 0 falhas, 0 erros, 0 ignorados
+DiscordUpdateTest: 9 testes, 0 falhas, 0 erros, 0 ignorados
+DomainTest: 20 testes, 0 falhas, 0 erros, 0 ignorados
+ExplosionFireRegressionTest: 11 testes, 0 falhas, 0 erros, 0 ignorados
+GroupPvpRegressionTest: 16 testes, 0 falhas, 0 erros, 0 ignorados
+PlaceholderRegressionTest: 5 testes, 0 falhas, 0 erros, 0 ignorados
+PluginIntegrationTest: 8 testes, 0 falhas, 0 erros, 0 ignorados
+ProductionCopyTest: 3 testes, 0 falhas, 0 erros, 0 ignorados
+ProgressUpdateTest: 11 testes, 0 falhas, 0 erros, 0 ignorados
+RaidBlockRulesTest: 5 testes, 0 falhas, 0 erros, 0 ignorados
+RaidMechanismRegressionTest: 12 testes, 0 falhas, 0 erros, 0 ignorados
+RaidSessionTest: 8 testes, 0 falhas, 0 erros, 0 ignorados
+StateStoreTest: 6 testes, 0 falhas, 0 erros, 0 ignorados
+UpdateCommandsTest: 12 testes, 0 falhas, 0 erros, 0 ignorados
+UpdateOptionsTest: 3 testes, 0 falhas, 0 erros, 0 ignorados
+
+DiscordSRV 1.30.5: assinaturas dos três getters públicos verificadas com javap no JAR oficial; resolução por reflexão das interfaces JDA sendMessage/allowedMentions/queue confirmada. Nenhum bot iniciado ou mensagem real enviada. Testes de transporte/ack/canal/falha/deduplicação são simulados.
+
+Migração: fixtures completas de esquema 2 em pastas temporárias, inicialização real do plugin no MockBukkit, preservação de campos, backup e falhas provocadas. Nenhuma cópia real de produção foi disponibilizada.
+
+Os cenários de corrupção/IO provocam logs SEVERE esperados e verificam preservação do arquivo válido/manutenção.
+
+Pendente: homologação com cópia dos dados reais, Paper, clientes Java e Bedrock, farm e drops reais/keepInventory, PvPManager e DiscordSRV/bot/canal reais. Compatibilidade com essas integrações não foi comprovada por este build. Sem nova integração de Combat Logging ou penalidade.
+Nenhum wipe, alteração de produção ou instalação automática.
