@@ -1,10 +1,10 @@
 name: Territorio
-version: '2.0.1'
+version: '2.1.0'
 main: dev.nateriver.territorio.TerritorioPlugin
 description: Claims, grupos, guerras e saques do Território.
 author: NateRiver
 api-version: '26.2'
-softdepend: [PlaceholderAPI, TAB, PvPManager]
+softdepend: [PlaceholderAPI, TAB, PvPManager, DiscordSRV]
 commands:
   territorio:
     aliases: [t, terr]
@@ -50,4 +50,8 @@ permissions:
   territorio.admin.bypass:
     default: false
   territorio.admin.force:
+    default: false
+  territorio.admin.deletar:
+    default: false
+  territorio.admin.discord:
     default: false

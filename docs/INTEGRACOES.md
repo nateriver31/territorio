@@ -14,6 +14,7 @@ Instale uma versão compatível com Paper 26.2, junto do Território, e reinicie
 | `%territorio_cargo%` | `Líder`, `Colíder`, `Oficial` ou `Membro` | vazio |
 | `%territorio_cargo_simbolo%` | líder `§6♛§r `, colíder `§6◆§r `, oficial `§6•§r `; membro vazio | vazio |
 | `%territorio_tem_grupo%` | `true` | `false` |
+| `%territorio_prefixo_minimessage%` | Símbolo e TAG dourados serializados em MiniMessage, seguidos do espaço próprio | vazio |
 
 Teste manualmente `/papi parse me %territorio_tag_formatada%` com alguém que tem grupo e depois de sair. Sem PlaceholderAPI, os sistemas de jogo continuam funcionando; só a integração visual dependente dela fica indisponível. Não cria times de scoreboard.
 
@@ -61,6 +62,26 @@ Mescle a TAG ao formato que sua instalação já usa; este exemplo não substitu
 
 Valide a versão escolhida do formatador com Paper 26.2 e confira apelidos coloridos, cargos, mensagens Java/Bedrock e jogadores ocultos. Nenhum arquivo de TAB, LuckPerms ou do formatador é alterado pelo Território.
 
+### LPC MiniMessage
+
+O formato acima é do LPC com códigos legados. Para **LPC MiniMessage**, preserve o formato já instalado e acrescente `%territorio_prefixo_minimessage%` imediatamente antes da parte existente que formata o nick. Esse placeholder mantém símbolo/TAG dourados e retorna vazio para solo, sem códigos `§` dentro do MiniMessage. Os tokens de nome, prefixo e cores continuam sendo os da sua versão do LPC. Não troque os placeholders legados no TAB por esse valor MiniMessage.
+
+Valide `/papi parse me %territorio_prefixo_minimessage%`. O placeholder é incluído na 2.1.0 para preservar a correção de chat da 2.0.2, embora essa correção estivesse em branch separada da `main`.
+
+## DiscordSRV 1.30.5
+
+Usa o bot existente; não instala outro bot nem webhook. As opções pertencem somente ao `config.yml` do Território:
+
+```yaml
+discordsrv:
+  enabled: true
+  announce-war: true
+  announce-peace: true
+  channel: ""
+```
+
+Vazio usa o canal principal já mapeado para chat. Uma chave explícita, como `global`, só funciona se existir no mapeamento do DiscordSRV. Não coloque token nem ID nesse campo. Teste com `/t admin discord teste` e `territorio.admin.discord`; sucesso só aparece após confirmação assíncrona do envio. Sem DiscordSRV/conexão/canal/permissão, registra falha e a diplomacia continua. Somente guerras declaradas e paz aceita são anunciadas após persistência, sem replay no reload/reinício e sem menções habilitadas. [Detalhes e limites](ATUALIZACAO-2.1.0.md#discordsrv-1305).
+
 ## LuckPerms
 
 Use os nós de [COMANDOS.md](COMANDOS.md). Atribuições são feitas pela staff. Não são necessárias APIs proprietárias nem alteração da configuração global de permissões.
@@ -74,6 +95,8 @@ O alvo desta integração é PvPManager 4.0.22. O Território é carregado depoi
 Teste corpo a corpo, flechas comuns/com efeitos/em chamas, tridente, projéteis explosivos, splash e lingering: companheiros não devem sofrer dano nem iniciar ou renovar Combat Log, e inimigos devem manter combate e punições normais por desconexão. Confira também as configurações de override/vulnerabilidade do PvPManager. Fontes sem autoria identificável não são atribuídas ao jogador mais próximo nem ganham um sistema persistente de rastreamento.
 
 A morte de um logger fake/NPC depende da implementação do PvPManager: a desconexão do invasor encerra o saque pelo evento normal de saída, sem simular uma morte ou conceder bônus de defesa fictício. Nenhum arquivo do PvPManager é modificado.
+
+Na 2.1.0 não foi acrescentada integração de recompensa por Combat Logging. A versão/configuração atual não foi confirmada, e não há evento confiável do logger integrado no código existente. Mortes Bukkit reais usam `DamageSource` para a nova recompensa; NPCs com metadata `NPC` são ignorados. Não há livro, morte ou penalidade simulada por desconexão. A homologação anterior do combate continua necessária.
 
 ## CoreProtect
 

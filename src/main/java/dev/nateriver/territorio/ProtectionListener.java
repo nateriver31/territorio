@@ -38,7 +38,7 @@ public final class ProtectionListener implements Listener {
     private Domain.Claim claim(Block b) { return domain.claim(key(b)); }
     private Domain.Claim claim(Location l) { return claim(l.getBlock()); }
     private boolean same(Domain.Claim a, Domain.Claim b) {
-        return a == null ? b == null : b != null && a.kind == b.kind && a.owner.equals(b.owner);
+        return a == null ? b == null : b != null && (a.kind == b.kind || (Domain.collective(a.kind)&&Domain.collective(b.kind))) && a.owner.equals(b.owner);
     }
     private boolean access(Player p, Domain.Claim c, Domain.Access action) {
         if (c == null || plugin.bypassing(p.getUniqueId())) return true;
@@ -468,6 +468,8 @@ public final class ProtectionListener implements Listener {
     }
     private boolean canHarmEntity(Entity target,Entity source) {
         if(target instanceof Player) return true; // Other players remain subject to PvPManager's policy.
+        // Narrow farm fix: vanilla zombies may damage villagers; no player/projectile grant.
+        if(target instanceof Villager && source instanceof Zombie)return true;
         Domain.Claim c=claim(target.getLocation()); if(c==null)return true;
         Player p=actor(source);return p!=null && access(p,c,Domain.Access.BUILD);
     }

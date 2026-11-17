@@ -1,40 +1,43 @@
-# Território 2.0.1 (Codex IA)
+# Território 2.1.0 (Codex IA)
 
-Plugin para **Paper 26.2 / Java 25**. Correções pontuais do beta 2.0: explosões, TAGs, PvP do mesmo grupo, avisos, fogo natural, redstone em saques e comandos/manual.
+Plugin para **Paper 26.2 / Java 25**. Atualização aditiva: Claims Bônus por PvP, livros de informações, logs diários e anúncios pelo DiscordSRV existente. Corrige `/t claims` de integrantes de grupos e dano de zumbis a aldeões, preservando as regras anteriores.
 
 ## Downloads
 
-**Versão 2.0.1 para homologação — Paper 26.2 e Java 25.**
+**Versão 2.1.0 para homologação em cópia dos dados — Paper 26.2 e Java 25.**
 
 | Opção | O que baixar |
 | --- | --- |
-| [Plugin JAR](dist/Territorio-2.0.1.jar) | Arquivo para colocar na pasta `plugins` do servidor |
-| [Projeto completo ZIP](dist/Territorio-2.0.1-projeto.zip) | Código-fonte, JAR, configurações padrão, testes e manuais |
-| [Verificação SHA-256](dist/SHA256SUMS-2.0.1.txt) | Checksums dos arquivos distribuídos |
-| [Resultados dos testes](dist/VALIDACAO-2.0.1.txt) | Resumo dos 101 testes automatizados aprovados |
+| [Plugin JAR](dist/Territorio-2.1.0.jar) | Compilado para testar antes da troca manual em produção |
+| [Projeto completo ZIP](dist/Territorio-2.1.0-projeto.zip) | Código-fonte, JAR, configurações padrão, testes e manuais |
+| [Verificação SHA-256](dist/SHA256SUMS-2.1.0.txt) | Checksums dos arquivos distribuídos |
+| [Resultados dos testes](dist/VALIDACAO-2.1.0.txt) | Resumo dos 167 testes automatizados aprovados |
 | [Relatório desta correção](docs/ENTREGA.md) | Alterações, decisões aprovadas e limitações |
 
-O **projeto completo ZIP** inclui código, JAR, configuração e manuais desta correção. A versão publicada 2.0.0 permanece como histórico; os downloads acima correspondem à 2.0.1 desta branch.
+As distribuições 2.0.x permanecem no histórico. Leia [as regras, configurações e migração da 2.1.0](docs/ATUALIZACAO-2.1.0.md).
 
 ### Instalação rápida
 
-1. Use uma instância de testes com **Paper 26.2 e Java 25** e faça backup.
-2. Pare o servidor. Retire o JAR antigo do Território e coloque `Territorio-2.0.1.jar` em `plugins`. Não mantenha as duas versões instaladas.
-3. Siga [as instruções sobre os dados antigos](docs/INSTALACAO.md). O `data.yml` 0.1.2 não é importado e não será apagado automaticamente.
+1. Faça backup recuperável e use uma cópia isolada dos dados/mundos com **Paper 26.2 e Java 25**.
+2. Com a instância de testes parada, substitua apenas o JAR por `Territorio-2.1.0.jar`. Não mantenha duas versões instaladas.
+3. Preserve `state.json`, backups, auditoria e configuração. A migração de esquema 2 para 3 cria `state.json.pre-v3.bak`; não converte claims antigos nem concede bônus retroativos.
 4. Inicie e use `/t` para abrir o manual; `/territorio` funciona se `/t` pertencer a outro plugin.
-5. Configure manualmente as permissões e a integração visual, e execute o [roteiro de homologação](docs/TESTES-MANUAIS.md).
+5. Execute o [roteiro 2.1.0](docs/TESTES-MANUAIS-2.1.0.md) antes de programar a instalação manual em produção. Confira [backup e recuperação](docs/ATUALIZACAO-2.1.0.md#migração-backup-e-recuperação).
 
-**Validação:** 101 testes automatizados aprovados, sem falhas ou ignorados, incluindo testes no MockBukkit 26.2. Ainda falta homologar em servidor real com clientes Java/Bedrock e as versões instaladas de Geyser, TAB, PvPManager e CoreProtect. A redução de mineração usa atributo de velocidade 0,5; o tempo observado depende das condições vanilla e dos ticks. Consulte [o relatório completo](docs/ENTREGA.md).
+**Validação:** 167 testes aprovados, sem falhas, erros ou ignorados; `mvn clean verify` concluído. A migração foi testada com fixtures completas de dados antigos, sem acesso aos dados reais. Ainda é necessária homologação com cópia da produção, clientes Java/Bedrock, PvPManager, DiscordSRV e demais plugins instalados. Consulte [o relatório](docs/ENTREGA.md).
 
 ## O que o plugin oferece
 
 - Claims solo, coletivos e um chunk pessoal extra privado por integrante.
+- Claims Bônus coletivos separados: capacidade padrão de seis por integrante, saldo por PvP e perda de proteção do mais recente quando necessário.
+- Livro físico de informações de um claim, com chance configurável de 25% e sem influência de Pilhagem.
 - Grupos com TAG, quatro cargos, convites, sucessão e limites sem duplicar contribuição na troca de grupo.
 - Guerras com líderes online no início, vulnerabilidade assimétrica, propostas de paz corrigidas e histórico.
 - Alianças com permissões direcionais de mecanismos, recipientes e construção.
 - `/roubar`: saque solo de cinco minutos, um invasor, até 30 blocos compartilhados, cooldowns e defesa.
 - `/verchunk`, avisos discretos de território, livro de ajuda e expansão opcional PlaceholderAPI.
 - Ferramentas administrativas com permissões explícitas, auditoria e persistência própria.
+- Exclusão administrativa confirmada, logs diários e integração opcional com o bot de chat existente do DiscordSRV 1.30.5.
 
 Jogadores do mesmo grupo não causam PvP entre si. O Território não cria zonas de PvP, não usa ActionBar constante, não disputa scoreboard com o TAB e não configura outros plugins.
 
@@ -47,13 +50,14 @@ java -version
 mvn clean verify
 ```
 
-O resultado é `target/territorio-2.0.1.jar`. As dependências Paper e PlaceholderAPI são `provided`: não são incluídas no JAR. PlaceholderAPI é opcional no servidor. MockBukkit e JUnit só são usados nos testes. A API está fixada em `26.2.build.135-stable`; não se presume compatibilidade com versões antigas, Spigot ou Folia.
+O resultado é `target/territorio-2.1.0.jar`. As dependências existentes e a API `26.2.build.135-stable` foram preservadas; nenhuma dependência nova foi acrescentada. PlaceholderAPI e DiscordSRV são opcionais. MockBukkit e JUnit só são usados nos testes. Não se presume compatibilidade com versões antigas, Spigot ou Folia.
 
 Se seu ambiente exigir proxy ou CA corporativa, configure-os externamente ao projeto e preserve a verificação TLS.
 
 ## Documentação
 
 - [Instalação e dados antigos](docs/INSTALACAO.md)
+- [Atualização 2.1.0, configuração e recuperação](docs/ATUALIZACAO-2.1.0.md)
 - [Comandos e permissões](docs/COMANDOS.md)
 - [Texto atualizado do livro /t](docs/MANUAL.md)
 - [TAB, PlaceholderAPI e integrações](docs/INTEGRACOES.md)
@@ -61,6 +65,7 @@ Se seu ambiente exigir proxy ou CA corporativa, configure-os externamente ao pro
 - [Diagnóstico do JAR 0.1.2](docs/DIAGNOSTICO-0.1.2.md)
 - [Política das proteções](docs/PROTECAO.md)
 - [Roteiro para servidor real](docs/TESTES-MANUAIS.md)
+- [Homologação da atualização 2.1.0](docs/TESTES-MANUAIS-2.1.0.md)
 - [Resultados e limitações da entrega](docs/ENTREGA.md)
 
-Não existe wipe automático. O `data.yml` antigo é preservado e não é importado. A publicação no GitHub não instala o JAR no servidor, não modifica outros plugins nem publica o ambiente na nuvem. Homologue em uma instância de testes antes de usar em produção.
+Não existe wipe automático. Não apague o estado para atualizar. A publicação no GitHub não instala o JAR, não modifica outros plugins nem acessa produção. O JAR antigo exige o backup de dados correspondente para rollback; não lê o esquema 3.

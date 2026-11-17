@@ -89,4 +89,15 @@ class PlaceholderRegressionTest {
         expansion.refresh();
         assertEquals("NOVA",CompletableFuture.supplyAsync(()->value(leader,"tag")).get(5,TimeUnit.SECONDS));
     }
+    @Test void lpcMiniMessagePrefixRetainsRanksAndLeavesNicknameColorToTheChatFormatter(){
+        assertEquals("",value(leader,"prefixo_minimessage"));group();
+        var mini=net.kyori.adventure.text.minimessage.MiniMessage.miniMessage();
+        var plain=net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText();
+        assertEquals("♛ [ROMA] Apelido",plain.serialize(mini.deserialize(value(leader,"prefixo_minimessage")+"<green>Apelido")));
+        assertEquals("[ROMA] Apelido",plain.serialize(mini.deserialize(value(member,"prefixo_minimessage")+"<green>Apelido")));
+        assertFalse(value(leader,"prefixo_minimessage").contains("§"));
+        domain.adminRename(domain.group(leader.getUniqueId()).id,"Roma Nova","NOVA");expansion.refresh();
+        assertTrue(value(leader,"prefixo_minimessage").contains("NOVA"));
+        domain.dissolve(leader.getUniqueId());expansion.refresh();assertEquals("",value(member,"prefixo_minimessage"));
+    }
 }
