@@ -1,5 +1,7 @@
 # Território 2.1.0 (Codex IA)
 
+> **Projeto vibecodado — desenvolvido com auxílio de inteligência artificial (Codex/OpenAI).** Código, testes e documentação são produzidos com apoio de IA, sob orientação do administrador. Os testes automatizados não substituem revisão humana e homologação em uma cópia dos dados antes do uso em produção.
+
 Plugin para **Paper 26.2 / Java 25**. Atualização aditiva: Claims Bônus por PvP, livros de informações, logs diários e anúncios pelo DiscordSRV existente. Corrige `/t claims` de integrantes de grupos e dano de zumbis a aldeões, preservando as regras anteriores.
 
 ## Downloads
